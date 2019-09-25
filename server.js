@@ -17,10 +17,21 @@ var fs = require('fs'),
     T = new Twit(config.twitter),
     stream = T.stream('statuses/sample');
 
-console.log('howsmydriving: start');
+console.log(`${process.env.TWITTER_HANDLE}: start`);
 
 var soap = require('soap');
 var url = 'https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl';
+
+/*
+    T.get('statuses/show/1176670811358400514', function(err, tweet, response) {
+      if (err){
+        console.log(`Error!: ${err}`);
+        return false;
+      }
+      
+      console.log(`Retrieved tweets: ${printObject(tweet)}`);
+    });
+*/
 
 //var plate = 'ATT2936';
 //var plate = 'BDS9037';
@@ -45,12 +56,12 @@ app.all("/tweet", function (request, response) {
   /* Respond to @ mentions */
   fs.readFile(__dirname + '/last_mention_id.txt', 'utf8', function (err, last_mention_id) {
     /* First, let's load the ID of the last tweet we responded to. */
-    console.log('last_mention_id:', last_mention_id);
+    console.log(`last_mention_id: ${last_mention_id}`);
 
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get('search/tweets', { q: 'to:' + process.env.TWITTER_HANDLE, since_id: last_mention_id }, function(err, data, response) {
       if (err){
-        console.log('Error!', err);
+        console.log(`Error!: ${err}`);
         return false;
       }
       
@@ -66,7 +77,7 @@ app.all("/tweet", function (request, response) {
         */
         var maxTweetIdRead = -1;
         data.statuses.forEach(function(status) {
-          console.log("Found " + printTweet(status));
+          console.log(`Found ${printTweet(status)}`);
           
           if (maxTweetIdRead < status.id_str) {
             maxTweetIdRead = status.id_str;
@@ -80,18 +91,6 @@ app.all("/tweet", function (request, response) {
             ];
             
             SendResponses(status, tweets, verbose);
-            /*
-            T.post('statuses/update', {
-              status: "@" + status.user.screen_name + " " + noValidPlate,
-              in_reply_to_status_id: status.id_str
-            }, function(err, data, response) {
-              console.log("Sent tweet!: " + status.id_str + ", " + status.user.screen_name + ", " + status.text);
-              if (err){
-                  // TODO: Proper error handling? 
-                console.log('Error!', err);
-              }
-            });
-            */
           }
           else {
             /* 
@@ -105,11 +104,11 @@ app.all("/tweet", function (request, response) {
         });
         
         if (maxTweetIdRead > last_mention_id) {
-          //console.log("Writing last_mention_id: " + maxTweetIdRead);
+          console.log(`Writing last_mention_id: ${maxTweetIdRead}`);
           fs.writeFile(__dirname + '/last_mention_id.txt', maxTweetIdRead, function (err) {
             /* TODO: Error handling? */
             if(err){
-              console.log('Error!', err);
+              console.log(`Error!: ${err}`);
             }
           });
         }
@@ -125,18 +124,16 @@ app.all("/tweet", function (request, response) {
   /* Load the ID of the last DM we responded to. */
   fs.readFile(__dirname + '/last_dm_id.txt', 'utf8', function (err, last_dm_id) {
     if (err){
-      console.log('Error!', err);
+      console.log(`Error!: ${err}`);
       return false;
     }
-    console.log('last_dm_id:', last_dm_id);
+    console.log(`last_dm_id: ${last_dm_id}`);
 
     T.get('direct_messages', { since_id: last_dm_id, count: 200 }, function(err, dms, response) {
       /* Next, let's DM's to our bot, starting after the last DM we responded to. */
       if (dms.length){
         dms.forEach(function(dm) {
-          console.log(dm.sender_id);
-          console.log(dm.id_str);
-          console.log(dm.text);
+          console.log(`Direct message: sender (${dm.sender_id}) ie_str (${dm.id_str}) ${dm.text}`);
 
           /* Now we can respond to each tweet. */
           T.post('direct_messages/new', {
@@ -145,8 +142,7 @@ app.all("/tweet", function (request, response) {
           }, function(err, data, response) {
             if (err){
               /* TODO: Proper error handling? */
-              console.log('Error!');
-              console.log(err);
+              console.log(`Error!: ${err}`);
             }
             else{
               fs.writeFile(__dirname + '/last_dm_id.txt', dm.id_str, function (err) {
@@ -167,7 +163,7 @@ app.all("/tweet", function (request, response) {
 });
 
 var listener = app.listen(process.env.PORT, function () {
-  console.log('Your bot is running on port ' + listener.address().port);
+  console.log(`Your bot is running on port ${listener.address().port}`);
 });
 
 function parseTweet(text) {
@@ -183,7 +179,7 @@ function parseTweet(text) {
   const matches = licenseRegExp.exec(text);
   
   if (matches == null || matches.length < 2 || matches[1] == "XX") {
-    console.log("Error: No license found in tweet: " + text);
+    console.log(`Error: No license found in tweet: ${text}`);
   }
   else {
     state = matches[1];
@@ -223,7 +219,7 @@ function GetReplies(plate, state, verbose) {
             violationDate = new Date(Date.parse(citations[key].ViolationDate));
           }
           catch ( e ) {
-            console.log("Error parsing date " + citations[key].ViolationDate + " :" + e);
+            console.log(`Error parsing date ${citations[key].ViolationDate} : ${e}`);
           }
           
           if (!(violationDate in chronologicalCitations)) {
@@ -323,23 +319,20 @@ function GetReplies(plate, state, verbose) {
 }
 
 function SendResponses(origTweet, tweets, verbose) {
-  
-  //console.log("In SendResponses. " + tweets.length + " Tweets to send:\n" + printObject(tweets));
-  
   var tweetText = tweets.shift();
   var replyToScreenName = origTweet.user.screen_name;
   var replyToTweetId = origTweet.id_str;
   
   try {
     /* Now we can respond to each tweet. */
-    //console.log("Sending tweet (" + replyToScreenName + " " + replyToTweetId + "): " + tweetText);
-    tweetText = " @" + replyToScreenName + " " + tweetText;
-    console.log("Source " + printTweet(origTweet));
+    tweetText = "@" + replyToScreenName + " " + tweetText;
     (new Promise(function (resolve, reject) {
 
+      console.log(`Tweeting ${tweetText}`);
       T.post('statuses/update', {
         status: tweetText,
-        in_reply_to_status_id: replyToTweetId
+        in_reply_to_status_id: replyToTweetId,
+        auto_populate_reply_metadata: true
       }, function(err, data, response) {
         if (err){
             /* TODO: Proper error handling? */
@@ -347,31 +340,23 @@ function SendResponses(origTweet, tweets, verbose) {
           reject(err);
         }
         else{
-          //console.log("Successfully sent tweet (" + replyToScreenName + " " + replyToTweetId + "): created tweet id:" + data.id_str + ", " + data.user.screen_name);
-          console.log("Created " + printTweet(data));
-          
-          if (verbose) {
-            //console.log(printObject(data));
-          }
-          
           fs.writeFile(__dirname + '/last_mention_id.txt', data.id_str, function (err) {
             /* TODO: Error handling? */
             if(err){
-              console.log('Error!', err);
+              console.log(`Error!: ${err}`);
             }
           });
           resolve(data);
         }
       });
     })).then ( function ( sentTweet ) {
-      //console.log("In SendResponses after sending tweet " + sentTweet.id_str + "\n" + tweets.length + " Tweets left to send:\n" + printObject(tweets));
       if (tweets.length > 0) {
         SendResponses(sentTweet, tweets, verbose);
       }
     });
   }
   catch ( e ) {
-    console.log("EXCEPTION!!! " + e);
+    console.log(`EXCEPTION!!!: ${e}`);
   }
 }
 
@@ -393,7 +378,7 @@ async function GetCitationsByPlate(plate, state) {
           })
           var post = Object.keys(allCitations).length;
             if (pre != 0 && pre != post) {
-              console.log("Found vehicle for which violations for IDs different: " + formatPlate(plate, state) + " Pre: " + pre + " Post: " + post);
+              console.log(`Found vehicle for which violations for IDs different: ${formatPlate(plate, state)} Pre: ${pre} Post: ${post}`);
             }
           resolve();
           });
