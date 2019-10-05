@@ -83,23 +83,32 @@ app.all("/tweet", function (request, response) {
             maxTweetIdRead = status.id_str;
           }
 
-          const {state, plate, verbose} = parseTweet(status.full_text);
-          
-          if (state == null || plate == null) {
-            var tweets = [
-              noValidPlate
-            ];
-            
-            SendResponses(status, tweets, verbose);
+          /*
+          Make sure this isn't a reply to one of the bot's tweets.
+          */
+          if (status.in_reply_to_screen_name === process.env.TWITTER_HANDLE) {
+            // Do nothing
+            console.log("Ignoring response to my tweet by (" + status.user.screen_name + "): " + status.full_text);
           }
           else {
-            /* 
-            These replies must be executed sequentially 
-            with each one referencing the previous tweet in the thread. 
-            */
-            GetReplies(plate, state, verbose).then( function(tweets) {
+            const {state, plate, verbose} = parseTweet(status.full_text);
+
+            if (state == null || plate == null) {
+              var tweets = [
+                noValidPlate
+              ];
+
               SendResponses(status, tweets, verbose);
-            });
+            }
+            else {
+              /* 
+              These replies must be executed sequentially 
+              with each one referencing the previous tweet in the thread. 
+              */
+              GetReplies(plate, state, verbose).then( function(tweets) {
+                SendResponses(status, tweets, verbose);
+              });
+            }
           }
         });
         
@@ -487,17 +496,9 @@ function printObject(o, indent) {
 }
 
 function printTweet(tweet) {
-  console.log(printObject(tweet));
-  
-  if (tweet.truncated == true) {
-    cosole.log("EXTENNDED!!!!!: " + tweet.extended_tweet.full_text);
-  }
-    return "Tweet: id: " + tweet.id + 
-      ", id_str: " + tweet.id_str + 
-      ", user: " + tweet.user.screen_name + 
-      ", in_reply_to_status_id: " + tweet.in_reply_to_status_id + 
-      ", in_reply_to_status_id_str: " + tweet.in_reply_to_status_id_str + 
-//      ", " + tweet.extended_tweet.full_text;
-//      ", " + tweet.full_text.substring(0, 50);
-      ", " + tweet.full_text;
+  return "Tweet: id: " + tweet.id + 
+    ", id_str: " + tweet.id_str + 
+    ", user: " + tweet.user.screen_name + 
+    ", in_reply_to_screen_name: " + tweet.in_reply_to_screen_name + 
+    ", " + tweet.full_text;
 }
