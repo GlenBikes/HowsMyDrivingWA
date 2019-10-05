@@ -11,7 +11,8 @@ var fs = require('fs'),
         consumer_key: process.env.CONSUMER_KEY,
         consumer_secret: process.env.CONSUMER_SECRET,
         access_token: process.env.ACCESS_TOKEN,
-        access_token_secret: process.env.ACCESS_TOKEN_SECRET
+        access_token_secret: process.env.ACCESS_TOKEN_SECRET,
+        tweet_mode: 'extended'
       }
     },
     T = new Twit(config.twitter),
@@ -23,7 +24,7 @@ var soap = require('soap');
 var url = 'https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl';
 
 /*
-    T.get('statuses/show/1176670811358400514', function(err, tweet, response) {
+    T.get('statuses/show/1179863388060618758', function(err, tweet, response) {
       if (err){
         console.log(`Error!: ${err}`);
         return false;
@@ -32,7 +33,6 @@ var url = 'https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsSer
       console.log(`Retrieved tweets: ${printObject(tweet)}`);
     });
 */
-
 //var plate = 'ATT2936';
 //var plate = 'BDS9037';
 //var plate = 'R204WSU';
@@ -59,7 +59,7 @@ app.all("/tweet", function (request, response) {
     console.log(`last_mention_id: ${last_mention_id}`);
 
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
-    T.get('search/tweets', { q: 'to:' + process.env.TWITTER_HANDLE, since_id: last_mention_id }, function(err, data, response) {
+    T.get('search/tweets', { q: '%40' + process.env.TWITTER_HANDLE, since_id: last_mention_id, tweet_mode: 'extended' }, function(err, data, response) {
       if (err){
         console.log(`Error!: ${err}`);
         return false;
@@ -83,7 +83,7 @@ app.all("/tweet", function (request, response) {
             maxTweetIdRead = status.id_str;
           }
 
-          const {state, plate, verbose} = parseTweet(status.text);
+          const {state, plate, verbose} = parseTweet(status.full_text);
           
           if (state == null || plate == null) {
             var tweets = [
@@ -487,10 +487,17 @@ function printObject(o, indent) {
 }
 
 function printTweet(tweet) {
+  console.log(printObject(tweet));
+  
+  if (tweet.truncated == true) {
+    cosole.log("EXTENNDED!!!!!: " + tweet.extended_tweet.full_text);
+  }
     return "Tweet: id: " + tweet.id + 
       ", id_str: " + tweet.id_str + 
       ", user: " + tweet.user.screen_name + 
       ", in_reply_to_status_id: " + tweet.in_reply_to_status_id + 
       ", in_reply_to_status_id_str: " + tweet.in_reply_to_status_id_str + 
-      ", " + tweet.text.substring(0, 50);
+//      ", " + tweet.extended_tweet.full_text;
+//      ", " + tweet.full_text.substring(0, 50);
+      ", " + tweet.full_text;
 }
