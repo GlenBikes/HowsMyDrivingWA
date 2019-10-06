@@ -86,10 +86,17 @@ app.all("/tweet", function (request, response) {
           /*
           Make sure this isn't a reply to one of the bot's tweets.
           */
-          if (status.in_reply_to_screen_name === process.env.TWITTER_HANDLE) {
-            // Do nothing
-            console.log("Ignoring response to my tweet by (" + status.user.screen_name + "): " + status.full_text);
+          /* Don't retweet our own tweets. */
+          if (status.user.id == app_id)
+          {
+            console.log('Ignoring our own tweet: ' + status.full_text);
           }
+
+//          if (status.in_reply_to_status_id && 
+//              status.in_reply_to_screen_name === process.env.TWITTER_HANDLE) {
+//            // Do nothing
+//            console.log("Ignoring response to my tweet by (" + status.user.screen_name + "): " + status.full_text);
+//          }
           else {
             const {state, plate, verbose} = parseTweet(status.full_text);
 
@@ -173,6 +180,19 @@ app.all("/tweet", function (request, response) {
 
 var listener = app.listen(process.env.PORT, function () {
   console.log(`Your bot is running on port ${listener.address().port}`);
+});
+
+/* tracks the largest tweet ID retweeted - they don't seem to come in order */
+var app_id = -1;
+
+/* Get the current user account (victimblame) */
+T.get('account/verify_credentials', { }, function(err, data, response) {
+  if (err){
+    console.log('Error getting current user!', err);
+    return false;
+  }
+  app_id = data.id;
+  console.log("Bot's id: " + app_id);
 });
 
 function parseTweet(text) {
@@ -500,5 +520,7 @@ function printTweet(tweet) {
     ", id_str: " + tweet.id_str + 
     ", user: " + tweet.user.screen_name + 
     ", in_reply_to_screen_name: " + tweet.in_reply_to_screen_name + 
-    ", " + tweet.full_text;
+    ", " + tweet.full_text 
+  //  + "\n" + printObject(tweet)
+  ;
 }
