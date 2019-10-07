@@ -11,8 +11,7 @@ var fs = require('fs'),
         consumer_key: process.env.CONSUMER_KEY,
         consumer_secret: process.env.CONSUMER_SECRET,
         access_token: process.env.ACCESS_TOKEN,
-        access_token_secret: process.env.ACCESS_TOKEN_SECRET,
-        tweet_mode: 'extended'
+        access_token_secret: process.env.ACCESS_TOKEN_SECRET
       }
     },
     T = new Twit(config.twitter),
@@ -24,21 +23,17 @@ var soap = require('soap');
 var url = 'https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl';
 
 /*
-    T.get('statuses/show/1179863388060618758', function(err, tweet, response) {
-      if (err){
-        console.log(`Error!: ${err}`);
-        return false;
-      }
-      
-      console.log(`Retrieved tweets: ${printObject(tweet)}`);
-    });
+  // Quick check to fetch a specific tweet and dump it fully.
+  TODO: Move to app.all("/dumptweet" ...
+  T.get('statuses/show/1179863388060618758', function(err, tweet, response) {
+    if (err){
+      console.log(`Error!: ${err}`);
+      return false;
+    }
+
+    console.log(`Retrieved tweets: ${printObject(tweet)}`);
+  });
 */
-//var plate = 'ATT2936';
-//var plate = 'BDS9037';
-//var plate = 'R204WSU';
-//var plate = 'ANB4866';
-//var plate = '3FEET';
-//var state = 'WA';
 var maxTweetLength = 280;
 var tweets = [];
 var noCitations = "No citations found for plate # ";
@@ -47,10 +42,29 @@ var parkingAndCameraViolationsText = "Total parking and camera violations for #"
 var violationsByYearText = "Violations by year for #";
 var statesAndProvinces = [ 'AL', 'AK', 'AS', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FM', 'FL', 'GA', 'GU', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MH', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'MP', 'OH', 'OK', 'OR', 'PW', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VI', 'VA', 'WA', 'WV', 'WI', 'WY', 'AB', 'BC', 'MB', 'NB', 'NL', 'NT', 'NS', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT' ];
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
+//var botScreenNameRegexp = new RegExp("\\b@" + process.env.TWITTER_HANDLE + "\\b", "ig");  <<<< Why does this not work to match twitter handle at start of line?
+var botScreenNameRegexp = new RegExp("@" + process.env.TWITTER_HANDLE + "\\b", "ig");
 
 app.use(express.static('public'));
 
-/* uptimerobot.com is hitting this URL every 20 minutes. */
+var listener = app.listen(process.env.PORT, function () {
+  console.log(`Your bot is running on port ${listener.address().port}`);
+});
+
+/* tracks the largest tweet ID retweeted - they don't seem to come in order */
+var app_id = -1;
+
+/* Get the current user account (victimblame) */
+T.get('account/verify_credentials', { }, function(err, data, response) {
+  if (err){
+    console.log('Error getting current user!', err);
+    return false;
+  }
+  app_id = data.id;
+  console.log("Bot's id: " + app_id);
+});
+
+/* uptimerobot.com is hitting this URL every 5 minutes. */
 
 app.all("/tweet", function (request, response) {
   /* Respond to @ mentions */
@@ -83,39 +97,42 @@ app.all("/tweet", function (request, response) {
             maxTweetIdRead = status.id_str;
           }
 
+          debugger;
+      
           /*
-          Make sure this isn't a reply to one of the bot's tweets.
+          Make sure this isn't a reply to one of the bot's tweets which would
+          include the bot screen name in full_text, but only due to replies.
           */
-          /* Don't retweet our own tweets. */
-          if (status.user.id == app_id)
-          {
-            console.log('Ignoring our own tweet: ' + status.full_text);
-          }
-
-//          if (status.in_reply_to_status_id && 
-//              status.in_reply_to_screen_name === process.env.TWITTER_HANDLE) {
-//            // Do nothing
-//            console.log("Ignoring response to my tweet by (" + status.user.screen_name + "): " + status.full_text);
-//          }
-          else {
-            const {state, plate, verbose} = parseTweet(status.full_text);
-
-            if (state == null || plate == null) {
-              var tweets = [
-                noValidPlate
-              ];
-
-              SendResponses(status, tweets, verbose);
+          var displayText = chompTweet(status);
+          
+          if (botScreenNameRegexp.test(displayText)) {
+            /* Don't reply to our own tweets. */
+            if (status.user.id == app_id) {
+              console.log('Ignoring our own tweet: ' + status.full_text);
             }
             else {
-              /* 
-              These replies must be executed sequentially 
-              with each one referencing the previous tweet in the thread. 
-              */
-              GetReplies(plate, state, verbose).then( function(tweets) {
+              const {state, plate, verbose} = parseTweet(displayText);
+
+              if (state == null || plate == null) {
+                var tweets = [
+                  noValidPlate
+                ];
+
                 SendResponses(status, tweets, verbose);
-              });
+              }
+              else {
+                /* 
+                These replies must be executed sequentially 
+                with each one referencing the previous tweet in the thread. 
+                */
+                GetReplies(plate, state, verbose).then( function(tweets) {
+                  SendResponses(status, tweets, verbose);
+                });
+              }
             }
+          }
+          else {
+            console.log("Ignoring reply that didn't actually reference bot: " + status.full_text);
           }
         });
         
@@ -136,7 +153,6 @@ app.all("/tweet", function (request, response) {
   });
 
   /* Respond to DMs */
-
   /* Load the ID of the last DM we responded to. */
   fs.readFile(__dirname + '/last_dm_id.txt', 'utf8', function (err, last_dm_id) {
     if (err){
@@ -149,7 +165,7 @@ app.all("/tweet", function (request, response) {
       /* Next, let's DM's to our bot, starting after the last DM we responded to. */
       if (dms.length){
         dms.forEach(function(dm) {
-          console.log(`Direct message: sender (${dm.sender_id}) ie_str (${dm.id_str}) ${dm.text}`);
+          console.log(`Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`);
 
           /* Now we can respond to each tweet. */
           T.post('direct_messages/new', {
@@ -178,23 +194,22 @@ app.all("/tweet", function (request, response) {
   response.sendStatus(200);
 });
 
-var listener = app.listen(process.env.PORT, function () {
-  console.log(`Your bot is running on port ${listener.address().port}`);
-});
-
-/* tracks the largest tweet ID retweeted - they don't seem to come in order */
-var app_id = -1;
-
-/* Get the current user account (victimblame) */
-T.get('account/verify_credentials', { }, function(err, data, response) {
-  if (err){
-    console.log('Error getting current user!', err);
-    return false;
+function chompTweet(tweet) {
+  // Extended tweet objects include the screen name of the tweeting user within the full_text,  
+  // as well as all replied-to screen names in the case of a reply.
+  // Strip off those because if UserA tweets a license plate and references the bot and then
+  // UserB replies to UserA's tweet without explicitly referencing the bot, we do not want to
+  // process that tweet.
+  var text = tweet.full_text;
+  
+  if (tweet.display_text_range != null && tweet.display_text_range.length >= 2) {
+    text = tweet.full_text.substring(tweet.display_text_range[0]);
   }
-  app_id = data.id;
-  console.log("Bot's id: " + app_id);
-});
+  
+  return text;
+}
 
+// Extract the state:license and optional flags from tweet text.
 function parseTweet(text) {
   var state;
   var plate;
@@ -204,9 +219,9 @@ function parseTweet(text) {
     //console.log("Found verbose!");
     verbose = true;
   }
-  
+
   const matches = licenseRegExp.exec(text);
-  
+
   if (matches == null || matches.length < 2 || matches[1] == "XX") {
     console.log(`Error: No license found in tweet: ${text}`);
   }
@@ -214,7 +229,6 @@ function parseTweet(text) {
     state = matches[1];
     plate = matches[2];
 
-    //console.log("state: " + state + " plate: " + plate);
     if (statesAndProvinces.indexOf(state.toUpperCase()) < 0) {
       throw "Invalid state: " + state;
     }
@@ -462,18 +476,6 @@ async function GetCitationsByVehicleNum(vehicleID) {
   });
 }
 
-function getSortedHash(inputHash){
-  var resultHash = {};
-
-  var keys = Object.keys(inputHash);
-  keys.sort(function(a, b) {
-    return inputHash[a] - inputHash[b]
-  }).reverse().forEach(function(k) {
-    resultHash[k] = inputHash[k];
-  });
-  return resultHash;
-}
-
 function formatPlate(plate, state)
 {
   return state.toUpperCase() + "-" + plate.toUpperCase();
@@ -515,12 +517,11 @@ function printObject(o, indent) {
     return out;
 }
 
+// Print out subset of tweet object properties.
 function printTweet(tweet) {
   return "Tweet: id: " + tweet.id + 
     ", id_str: " + tweet.id_str + 
     ", user: " + tweet.user.screen_name + 
     ", in_reply_to_screen_name: " + tweet.in_reply_to_screen_name + 
-    ", " + tweet.full_text 
-  //  + "\n" + printObject(tweet)
-  ;
+    ", " + tweet.full_text;
 }
