@@ -4,13 +4,18 @@
   "description": "Beep beep tweet!",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "mocha"
   },
   "dependencies": {
-    "twit": "^2.1.0",
     "express": "^4.14.0",
+    "interface.js": "^2.0.0",
+    "mocha": "^6.2.1",
+    "n-readlines": "*",
     "request": "^2.88.0",
+    "prepend-file": "*",
     "soap": "*",
+    "twit": "^2.1.0",
     "xml-js": "*"
   },
   "engines": {

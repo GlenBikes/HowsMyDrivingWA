@@ -1,10 +1,20 @@
+// Exported functions
+module.exports = {
+  _chompTweet: chompTweet,
+  _parseTweet: parseTweet
+};
+
 /* Setting things up. */
 var fs = require('fs'),
     path = require('path'),
     express = require('express'),
     app = express(),   
+    soap = require('soap'),
     Twit = require('twit'),
     convert = require('xml-js'),
+    Mocha = require('mocha'),
+    license = require('./opendata/licensehelper'),
+    seattle = require('./opendata/seattle'),
     config = {
     /* Be sure to update the .env file with your API keys. See how to get them: https://botwiki.org/tutorials/make-an-image-posting-twitter-bot/#creating-a-twitter-app*/      
       twitter: {
@@ -15,24 +25,56 @@ var fs = require('fs'),
       }
     },
     T = new Twit(config.twitter),
-    stream = T.stream('statuses/sample');
+    maxIdFileLen = 100,
+    maxErrorFileLen = 100,
+    lastDMFilename = "last_dm_id.txt",
+    lastMentionFilename = "last_mention_id.txt",
+    errorFilename = "error.txt";
 
 console.log(`${process.env.TWITTER_HANDLE}: start`);
+/*
+logTweetById("1184633776762228736");
+logTweetById("1184633777714335746");
+logTweetById("1184651910126530560");
+*/
 
-var soap = require('soap');
-var url = 'https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl';
 
 /*
   // Quick check to fetch a specific tweet and dump it fully.
-  TODO: Move to app.all("/dumptweet" ...
-  T.get('statuses/show/1179863388060618758', function(err, tweet, response) {
+  // TODO: Move to app.all("/dumptweet" ...
+  T.get('statuses/show/1184608363344216066', function(err, tweet, response) {
     if (err){
-      console.log(`Error!: ${err}`);
+      handleError(err);
       return false;
     }
 
-    console.log(`Retrieved tweets: ${printObject(tweet)}`);
+    console.log(`Retrieved tweet: ${printObject(tweet)}`);
+
+    // Now get replies to that tweet. No way in the API to do this.
+    console.log(`Searching for tweets to ${tweet.user.screen_name} since tweet ${tweet.id}`)
+    
+    T.get('search/tweets', { q: '@HMDWAUser', since_id: tweet.id, tweet_mode: 'extended' }, function(err, data, response) {
+      if (err) {
+        handleError(err);
+        return false;
+      }
+
+      if (data.statuses.length) {
+        var maxTweetIdRead = -1;
+        data.statuses.forEach(function(replyTweet) {
+          if (replyTweet.in_reply_to_status_id == tweet.id) {
+            console.log(`Found reply!!!!\n ${printObject(replyTweet)}`);
+          }
+          else {
+            console.log(`Found tweet ${printObject(replyTweet)}`)
+          }
+        });
+      }
+      else {
+        console.log("Found no replies.");
+      }
   });
+});
 */
 var maxTweetLength = 280;
 var tweets = [];
@@ -40,9 +82,9 @@ var noCitations = "No citations found for plate # ";
 var noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #";
 var parkingAndCameraViolationsText = "Total parking and camera violations for #";
 var violationsByYearText = "Violations by year for #";
+var violationsByStatusText = "Violations by status for #";
 var statesAndProvinces = [ 'AL', 'AK', 'AS', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FM', 'FL', 'GA', 'GU', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MH', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'MP', 'OH', 'OK', 'OR', 'PW', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VI', 'VA', 'WA', 'WV', 'WI', 'WY', 'AB', 'BC', 'MB', 'NB', 'NL', 'NT', 'NS', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT' ];
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
-//var botScreenNameRegexp = new RegExp("\\b@" + process.env.TWITTER_HANDLE + "\\b", "ig");  <<<< Why does this not work to match twitter handle at start of line?
 var botScreenNameRegexp = new RegExp("@" + process.env.TWITTER_HANDLE + "\\b", "ig");
 
 app.use(express.static('public'));
@@ -51,13 +93,13 @@ var listener = app.listen(process.env.PORT, function () {
   console.log(`Your bot is running on port ${listener.address().port}`);
 });
 
-/* tracks the largest tweet ID retweeted - they don't seem to come in order */
+/* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
 var app_id = -1;
 
 /* Get the current user account (victimblame) */
 T.get('account/verify_credentials', { }, function(err, data, response) {
   if (err){
-    console.log('Error getting current user!', err);
+    handleError(err);
     return false;
   }
   app_id = data.id;
@@ -65,17 +107,17 @@ T.get('account/verify_credentials', { }, function(err, data, response) {
 });
 
 /* uptimerobot.com is hitting this URL every 5 minutes. */
-
 app.all("/tweet", function (request, response) {
   /* Respond to @ mentions */
-  fs.readFile(__dirname + '/last_mention_id.txt', 'utf8', function (err, last_mention_id) {
+  var last_mention_id = getLastMentionId();
+  if (last_mention_id != undefined) {
     /* First, let's load the ID of the last tweet we responded to. */
     console.log(`last_mention_id: ${last_mention_id}`);
 
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get('search/tweets', { q: '%40' + process.env.TWITTER_HANDLE, since_id: last_mention_id, tweet_mode: 'extended' }, function(err, data, response) {
-      if (err){
-        console.log(`Error!: ${err}`);
+      if (err) {
+        handleError(err);
         return false;
       }
       
@@ -137,61 +179,95 @@ app.all("/tweet", function (request, response) {
         });
         
         if (maxTweetIdRead > last_mention_id) {
-          console.log(`Writing last_mention_id: ${maxTweetIdRead}`);
-          fs.writeFile(__dirname + '/last_mention_id.txt', maxTweetIdRead, function (err) {
-            /* TODO: Error handling? */
-            if(err){
-              console.log(`Error!: ${err}`);
-            }
-          });
+          setLastMentionId(maxTweetIdRead);
         }
       } else {
         /* No new mentions since the last time we checked. */
         console.log('No new mentions...');      
       }
     });    
-  });
+  }
 
   /* Respond to DMs */
   /* Load the ID of the last DM we responded to. */
-  fs.readFile(__dirname + '/last_dm_id.txt', 'utf8', function (err, last_dm_id) {
-    if (err){
-      console.log(`Error!: ${err}`);
-      return false;
-    }
-    console.log(`last_dm_id: ${last_dm_id}`);
+  var last_dm_id = getLastDmId();
+  if (last_dm_id == undefined) {
+    handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
+    last_dm_id = 0;
+  }
+  
+  console.log(`last_dm_id: ${last_dm_id}`);
 
-    T.get('direct_messages', { since_id: last_dm_id, count: 200 }, function(err, dms, response) {
-      /* Next, let's DM's to our bot, starting after the last DM we responded to. */
-      if (dms.length){
-        dms.forEach(function(dm) {
-          console.log(`Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`);
+  T.get('direct_messages', { since_id: last_dm_id, count: 200 }, function(err, dms, response) {
+    /* Next, let's DM's to our bot, starting after the last DM we responded to. */
+    if (dms.length){
+      dms.forEach(function(dm) {
+        console.log(`Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`);
 
-          /* Now we can respond to each tweet. */
-          T.post('direct_messages/new', {
-            user_id: dm.sender_id,
-            text: "This is a test response."
-          }, function(err, data, response) {
-            if (err){
-              /* TODO: Proper error handling? */
-              console.log(`Error!: ${err}`);
-            }
-            else{
-              fs.writeFile(__dirname + '/last_dm_id.txt', dm.id_str, function (err) {
-                /* TODO: Error handling? */
-              });
-            }
-          });
+        /* Now we can respond to each tweet. */
+        T.post('direct_messages/new', {
+          user_id: dm.sender_id,
+          text: "This is a test response."
+        }, function(err, data, response) {
+          if (err){
+            /* TODO: Proper error handling? */
+            handleError(err);
+          }
+          else{
+            setLastDmId(dm.id_str);
+          }
         });
-      } else {
-        /* No new DMs since the last time we checked. */
-        console.log('No new DMs...');      
-      }
-    });    
-  });  
+      });
+    } else {
+      /* No new DMs since the last time we checked. */
+      console.log('No new DMs...');      
+    }
+  });    
   
   /* TODO: Handle proper responses based on whether the tweets succeed, using Promises. For now, let's just return a success message no matter what. */
   response.sendStatus(200);
+});
+
+app.all("/test", function (request, response) {
+  // Instantiate a Mocha instance.
+  var mocha = new Mocha();
+
+  var testDir = './test'
+
+  // Add each .js file to the mocha instance
+  fs.readdirSync(testDir).filter(function(file) {
+      // Only keep the .js files
+      return file.substr(-3) === '.js';
+
+  }).forEach(function(file) {
+      mocha.addFile(
+          path.join(testDir, file)
+      );
+  });
+
+  // Run the tests.
+  mocha.run(function(failures) {
+    //process.exitCode = failures ? 1 : 0;  // exit with non-zero status if there were failures
+    // TODO: Handle proper responses based on whether the tweets succeed, using Promises. For now, let's just return a success message no matter what.
+    response.sendStatus(200);
+  });
+});
+
+app.all("/dumpfile", function (request, response) {
+  var fileName = `${__dirname}/${lastMentionFilename}`;
+  
+  if (request.query.hasOwnProperty("filename")) {
+    fileName = `${__dirname}/${request.query.filename}`;
+  }
+  console.log(`Sending file: ${fileName}.`)
+  response.sendFile(fileName);
+});
+
+app.all("/errors", function (request, response) {
+  var fileName = `${__dirname}/${errorFilename}`;
+
+  console.log(`Sending file: ${fileName}.`)
+  response.sendFile(fileName);
 });
 
 function chompTweet(tweet) {
@@ -216,21 +292,20 @@ function parseTweet(text) {
   var verbose = false;
   
   if (/verbose/i.test(text)) {
-    //console.log("Found verbose!");
     verbose = true;
   }
 
   const matches = licenseRegExp.exec(text);
 
   if (matches == null || matches.length < 2 || matches[1] == "XX") {
-    console.log(`Error: No license found in tweet: ${text}`);
+    handleError(new Error(`Error: No license found in tweet: ${text}`));
   }
   else {
     state = matches[1];
     plate = matches[2];
 
     if (statesAndProvinces.indexOf(state.toUpperCase()) < 0) {
-      throw "Invalid state: " + state;
+      handleError(new Error(`Invalid state: ${state}`));;
     }
   }
   
@@ -246,23 +321,28 @@ function GetReplies(plate, state, verbose) {
   var categorizedCitations = {};
   var chronologicalCitations = {};
   var violationsByYear = {};
+  var violationsByStatus = {};
   verbose = true;
 
   return new Promise((resolve, reject) => {
-    GetCitationsByPlate(plate, state).then(function(citations) {
+    seattle.GetCitationsByPlate(plate, state).then(function(citations) {
       var tweets = [];
 
       if (!citations || Object.keys(citations).length == 0) {
-        tweets.push(noCitations + formatPlate(plate, state));
+        tweets.push(noCitations + license.formatPlate(plate, state));
       } else {
         Object.keys(citations).forEach(function (key) {
           var year = "Unknown";
           var violationDate = new Date(Date.now());
+          
+          console.log(printObject(citations[key]));
+          
           try {
             violationDate = new Date(Date.parse(citations[key].ViolationDate));
           }
           catch ( e ) {
-            console.log(`Error parsing date ${citations[key].ViolationDate} : ${e}`);
+            handleError(new Error(`Error parsing date ${citations[key].ViolationDate}.`));
+            handleError(e);
           }
           
           if (!(violationDate in chronologicalCitations)) {
@@ -275,6 +355,11 @@ function GetReplies(plate, state, verbose) {
             categorizedCitations[citations[key].Type] = 0;
           }
           categorizedCitations[citations[key].Type]++;
+          
+          if (!(citations[key].Status in violationsByStatus)) {
+            violationsByStatus[citations[key].Status] = 0;
+          }
+          violationsByStatus[citations[key].Status]++;
 
           year = violationDate.getFullYear();
 
@@ -285,7 +370,7 @@ function GetReplies(plate, state, verbose) {
           violationsByYear[year]++;
         });
 
-        var tweetText = parkingAndCameraViolationsText + formatPlate(plate, state) + ": " + Object.keys(citations).length;
+        var tweetText = parkingAndCameraViolationsText + license.formatPlate(plate, state) + ": " + Object.keys(citations).length;
 
         Object.keys(categorizedCitations).forEach( function (key) {
           var tweetLine = key + ": " + categorizedCitations[key];
@@ -333,9 +418,9 @@ function GetReplies(plate, state, verbose) {
           if (tweetText.length > 0) {
             tweets.push(tweetText);
           }
-                                                      }
+        }
 
-        tweetText = violationsByYearText + formatPlate(plate, state) + ":";
+        tweetText = violationsByYearText + license.formatPlate(plate, state) + ":";
         Object.keys(violationsByYear).forEach( function (key) {
           var tweetLine = key + ": " + violationsByYear[key];
 
@@ -354,8 +439,28 @@ function GetReplies(plate, state, verbose) {
         if (tweetText.length > 0) {
           tweets.push(tweetText);
         }
-      }
 
+        tweetText = violationsByStatusText + license.formatPlate(plate, state) + ":";
+        Object.keys(violationsByStatus).forEach( function (key) {
+          var tweetLine = key + ": " + violationsByStatus[key];
+
+          // Max twitter username is 15 characters, plus the @
+          if (tweetText.length + tweetLine.length + 1 + 16 > maxTweetLength) {
+            tweets.push(tweetText);
+            tweetLine = "";
+            tweetText = tweetLine;
+          }
+          else {
+            tweetText += "\n";
+            tweetText += tweetLine
+          }
+        });
+
+        if (tweetText.length > 0) {
+          tweets.push(tweetText);
+        }
+      }
+      
       resolve(tweets);
     });
   });
@@ -371,7 +476,8 @@ function SendResponses(origTweet, tweets, verbose) {
     tweetText = "@" + replyToScreenName + " " + tweetText;
     (new Promise(function (resolve, reject) {
 
-      console.log(`Tweeting ${tweetText}`);
+      //console.log(`Tweeting ${tweetText}`);
+      console.log(`Replying to tweet: ${replyToTweetId}`)
       T.post('statuses/update', {
         status: tweetText,
         in_reply_to_status_id: replyToTweetId,
@@ -379,106 +485,31 @@ function SendResponses(origTweet, tweets, verbose) {
       }, function(err, data, response) {
         if (err){
             /* TODO: Proper error handling? */
-          console.log('Error!', err);
+          handleError(err);
           reject(err);
         }
         else{
-          fs.writeFile(__dirname + '/last_mention_id.txt', data.id_str, function (err) {
-            /* TODO: Error handling? */
-            if(err){
-              console.log(`Error!: ${err}`);
-            }
-          });
           resolve(data);
         }
       });
     })).then ( function ( sentTweet ) {
+      console.log(`Replied to tweet:  ${sentTweet.in_reply_to_status_id_str}`);
+      console.log(`Created tweet:     ${sentTweet.id_str}`);
+      
+      // Wait a bit. It seems tweeting a whackload of tweets in quick succession
+      // can cause Twitter to think you're a troll bot or something and then some
+      // of the tweets will not display for users other than the bot account.
+      // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
       if (tweets.length > 0) {
-        SendResponses(sentTweet, tweets, verbose);
+        //sleep(500).then(() => {
+          SendResponses(sentTweet, tweets, verbose);
+        //});
       }
     });
   }
   catch ( e ) {
-    console.log(`EXCEPTION!!!: ${e}`);
+    handleError(e);
   }
-}
-
-async function GetCitationsByPlate(plate, state) {
-  return new Promise((resolve, reject) => {
-    var allCitations = {};
-
-    GetVehicleIDs(plate, state).then(async function(vehicles) {
-
-      for ( var i = 0; i < vehicles.length; i++)
-      {
-        var vehicle = vehicles[i];
-        await new Promise(function(resolve, reject) {
-          GetCitationsByVehicleNum(vehicle.VehicleNumber).then(function(citations) {
-          
-          var pre = Object.keys(allCitations).length;
-          citations.forEach(function(item) {
-            allCitations[item.Citation] = item;
-          })
-          var post = Object.keys(allCitations).length;
-            if (pre != 0 && pre != post) {
-              console.log(`Found vehicle for which violations for IDs different: ${formatPlate(plate, state)} Pre: ${pre} Post: ${post}`);
-            }
-          resolve();
-          });
-        });
-      }
-      
-      resolve(allCitations);
-      
-    });
-  });
-}
-
-async function GetVehicleIDs(plate, state) {
-  var args = { 
-    Plate: plate,
-    State: state
-  };
-
-  return new Promise((resolve, reject) => {
-                     
-    soap.createClient(url, async function(err, client) {
-          client.GetVehicleByPlate(args, function(err, result) {
-            var vehicles = [];
-            var jsonObj = JSON.parse(result.GetVehicleByPlateResult);
-            var jsonResultSet = JSON.parse(jsonObj.Data);
-            for ( var i = 0; i < jsonResultSet.length; i++)
-            {
-              var vehicle = jsonResultSet[i];
-              vehicles.push(vehicle);
-            }
-
-            resolve(vehicles);
-          });
-      })
-  });
-}
-
-async function GetCitationsByVehicleNum(vehicleID) {
-  var args = { 
-        VehicleNumber: vehicleID,
-   };
-  return new Promise((resolve, reject) => {
-    soap.createClient(url, function(err, client) {
-      client.GetCitationsByVehicleNumber(args, function (err, citations) {
-
-        var jsonObj = JSON.parse(citations.GetCitationsByVehicleNumberResult);
-        var jsonResultSet = JSON.parse(jsonObj.Data);
-
-        resolve(jsonResultSet);
-      });
-    });
-  });
-}
-
-function formatPlate(plate, state)
-{
-  return state.toUpperCase() + "-" + plate.toUpperCase();
 }
 
 /**
@@ -517,11 +548,134 @@ function printObject(o, indent) {
     return out;
 }
 
+function getLastDmId() {
+  return getLastIdFromFile(lastDMFilename);
+}
+
+function getLastMentionId() {
+  return getLastIdFromFile(lastMentionFilename);
+}
+
+function getLastIdFromFile(filename) {
+  const lineByLine = require('n-readlines', function (err) {
+    if (err) {
+      handleError(err);
+    }
+  });
+  
+  try {
+    const filepath = `${__dirname}/${filename}`;
+    const liner = new lineByLine(filepath);
+    var lastIdRegExp = /\b(\d+)(: [\d\.\: ])?\b/;
+    var lastId;
+    let line;
+
+    while (line = liner.next()) {
+      /* strip off the date if present, it's only used for debugging. */
+      /* First, let's load the ID of the last tweet we responded to. */
+      const matches = lastIdRegExp.exec(line);
+      if (matches == null || matches.length < 1) {
+        handleError(new Error(`Error: No last mention found: ${line}`));
+      }
+      else if (lastId == undefined) {
+        lastId = matches[1];
+        break;
+      }
+    }
+  }
+  catch ( err ) {
+    handleError(err);
+  }
+    
+  return lastId;
+}
+  
+function setLastDmId(lastDmId) {
+  console.log(`Writing last dm id ${lastDmId}.`)
+  setLastIdInFile(lastDMFilename, lastDmId, maxIdFileLen)
+}
+
+function setLastMentionId(lastMentionId) {
+  console.log(`Writing last mention id ${lastMentionId}.`)
+  setLastIdInFile(lastMentionFilename, lastMentionId, maxIdFileLen)
+}
+
+function setLastIdInFile(filename, lastId, maxLines) {
+  var filepath = `${__dirname}/${filename}`;
+  var today = new Date();
+  var newLine = lastId + ": " + today.toLocaleDateString() + " " + today.toLocaleTimeString();
+
+  prependFile(filepath, newLine, maxLines);
+}
+
+function prependFile(filePath, newLines, maxLines) {
+  // Read file into memory
+  var textBuf = fs.readFileSync(filePath);
+  var textByLines = textBuf.toString().split("\n");
+  
+  textByLines = newLines.split("\n").concat(textByLines);
+  
+  // truncate to specified number of lines
+  textByLines = textByLines.slice(0, maxLines);
+  
+  fs.writeFileSync(filePath, textByLines.join("\n"), function (err) {
+    if (err) {
+      handleError(err);
+    }
+  });
+}
+
 // Print out subset of tweet object properties.
 function printTweet(tweet) {
   return "Tweet: id: " + tweet.id + 
     ", id_str: " + tweet.id_str + 
     ", user: " + tweet.user.screen_name + 
     ", in_reply_to_screen_name: " + tweet.in_reply_to_screen_name + 
+    ", in_reply_to_status_id: " + tweet.in_reply_to_status_id + 
+    ", in_reply_to_status_id_str: " + tweet.in_reply_to_status_id_str + 
     ", " + tweet.full_text;
+}
+
+function handleError(error) {
+  var filepath = `${__dirname}/${errorFilename}`;
+  var today = new Date();
+  var date = today.toLocaleDateString();
+  
+  //var time = today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds();
+  var time = today.toLocaleTimeString();
+  var dateTime = date + ' ' + time;
+  
+  console.log(`ERROR: ${error}`);
+
+  // Truncate the callstack because only the first few lines are relevant to this code.
+  var stacktrace = error.stack.split("\n").slice(0, 10).join("\n");
+  var formattedError = `============================== ${dateTime} =========================================\n${error.message}\n${stacktrace}`;
+  
+  prependFile(filepath, formattedError, maxErrorFileLen);
+}
+
+function logTweetById(id) {
+  // Quick check to fetch a specific tweet and dump it fully.
+  // TODO: Move to app.all("/dumptweet" ...
+  T.get(`statuses/show/${id}`, function(err, tweet, response) {
+    if (err){
+      handleError(err);
+      return false;
+    }
+
+    console.log(`Retrieved tweet: ${printObject(tweet)}`);
+  });
+
+}
+
+// Fake a sleep function. Call this thusly:
+// sleep(500).then(() => {
+//   do stuff
+// })
+// Or similar pattrs that use the Promise:
+// async function myFunc() {
+//   await sleep(1000);
+// }
+const sleep = (milliseconds) => {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
