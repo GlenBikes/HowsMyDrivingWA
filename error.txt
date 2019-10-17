@@ -1,0 +1,100 @@
+============================== 2019-10-17 03:27:29 =========================================
+User is over daily status update limit.
+Error: User is over daily status update limit.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-10-17 00:26:53 =========================================
+No status found with that ID.
+Error: No status found with that ID.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-10-17 00:26:13 =========================================
+No status found with that ID.
+Error: No status found with that ID.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-10-17 00:26:13 =========================================
+No status found with that ID.
+Error: No status found with that ID.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-10-16 22:36:52 =========================================
+ERROR: No last dm found! Defaulting to zero.
+Error: ERROR: No last dm found! Defaulting to zero.
+    at /app/server.js:182:17
+    at Layer.handle [as handle_request] (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/layer.js:95:5)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:137:13)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+============================== 2019-10-16 22:36:52 =========================================
+ENOENT: no such file or directory, open '/app/last_dm_id.txtt'
+Error: ENOENT: no such file or directory, open '/app/last_dm_id.txtt'
+    at Object.fs.openSync (fs.js:646:18)
+    at new LineByLine (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/n-readlines/1.0.0/node_modules/n-readlines/readlines.js:23:26)
+    at getLastIdFromFile (/app/server.js:549:19)
+    at getLastDmId (/app/server.js:532:10)
+    at /app/server.js:180:20
+    at Layer.handle [as handle_request] (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/layer.js:95:5)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:137:13)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+============================== 2019-10-16 22:35:59 =========================================
+ERROR: No last dm found! Defaulting to zero.
+Error: ERROR: No last dm found! Defaulting to zero.
+    at /app/server.js:182:17
+    at Layer.handle [as handle_request] (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/layer.js:95:5)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:137:13)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+============================== 2019-10-16 22:35:59 =========================================
+ENOENT: no such file or directory, open '/app/last_dm_id.txtt'
+Error: ENOENT: no such file or directory, open '/app/last_dm_id.txtt'
+    at Object.fs.openSync (fs.js:646:18)
+    at new LineByLine (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/n-readlines/1.0.0/node_modules/n-readlines/readlines.js:23:26)
+    at getLastIdFromFile (/app/server.js:549:19)
+    at getLastDmId (/app/server.js:532:10)
+    at /app/server.js:180:20
+    at Layer.handle [as handle_request] (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/layer.js:95:5)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:137:13)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
+============================== 2019-10-16 22:35:19 =========================================
+ERROR: No last dm found! Defaulting to zero.
+Error: ERROR: No last dm found! Defaulting to zero.
+    at /app/server.js:182:17
