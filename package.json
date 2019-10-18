@@ -4,12 +4,16 @@
   "description": "Beep beep tweet!",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node start.js",
     "test": "mocha"
   },
   "dependencies": {
+    "@babel/core": "*",
+    "@babel/register": "*",
+    "@babel/preset-env": "*",
     "express": "^4.14.0",
     "interface.js": "^2.0.0",
+    "json2html": "*",
     "mocha": "^6.2.1",
     "n-readlines": "*",
     "request": "^2.88.0",

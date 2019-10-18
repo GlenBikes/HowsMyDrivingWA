@@ -4,6 +4,8 @@ module.exports = {
   _parseTweet: parseTweet
 };
 
+import JSON2HTML from './json2html/json2html.js'
+
 /* Setting things up. */
 var fs = require('fs'),
     path = require('path'),
@@ -39,43 +41,6 @@ logTweetById("1184651910126530560");
 */
 
 
-/*
-  // Quick check to fetch a specific tweet and dump it fully.
-  // TODO: Move to app.all("/dumptweet" ...
-  T.get('statuses/show/1184608363344216066', function(err, tweet, response) {
-    if (err){
-      handleError(err);
-      return false;
-    }
-
-    console.log(`Retrieved tweet: ${printObject(tweet)}`);
-
-    // Now get replies to that tweet. No way in the API to do this.
-    console.log(`Searching for tweets to ${tweet.user.screen_name} since tweet ${tweet.id}`)
-    
-    T.get('search/tweets', { q: '@HMDWAUser', since_id: tweet.id, tweet_mode: 'extended' }, function(err, data, response) {
-      if (err) {
-        handleError(err);
-        return false;
-      }
-
-      if (data.statuses.length) {
-        var maxTweetIdRead = -1;
-        data.statuses.forEach(function(replyTweet) {
-          if (replyTweet.in_reply_to_status_id == tweet.id) {
-            console.log(`Found reply!!!!\n ${printObject(replyTweet)}`);
-          }
-          else {
-            console.log(`Found tweet ${printObject(replyTweet)}`)
-          }
-        });
-      }
-      else {
-        console.log("Found no replies.");
-      }
-  });
-});
-*/
 var maxTweetLength = 280;
 var tweets = [];
 var noCitations = "No citations found for plate # ";
@@ -103,7 +68,6 @@ T.get('account/verify_credentials', { }, function(err, data, response) {
     return false;
   }
   app_id = data.id;
-  console.log("Bot's id: " + app_id);
 });
 
 /* uptimerobot.com is hitting this URL every 5 minutes. */
@@ -139,8 +103,6 @@ app.all("/tweet", function (request, response) {
             maxTweetIdRead = status.id_str;
           }
 
-          debugger;
-      
           /*
           Make sure this isn't a reply to one of the bot's tweets which would
           include the bot screen name in full_text, but only due to replies.
@@ -263,6 +225,18 @@ app.all("/dumpfile", function (request, response) {
   response.sendFile(fileName);
 });
 
+app.all("/dumptweet", function (request, response) {
+  if (request.query.hasOwnProperty("id")) {
+    var tweet = getTweetById(request.query.id).then( function (tweet) {
+      response.set('Cache-Control', 'no-store');
+      response.json(tweet);
+    });
+  }
+  else {
+    handleError(new Error("Error: id is required for /dumptweet"));
+  }
+});
+
 app.all("/errors", function (request, response) {
   var fileName = `${__dirname}/${errorFilename}`;
 
@@ -334,8 +308,6 @@ function GetReplies(plate, state, verbose) {
         Object.keys(citations).forEach(function (key) {
           var year = "Unknown";
           var violationDate = new Date(Date.now());
-          
-          console.log(printObject(citations[key]));
           
           try {
             violationDate = new Date(Date.parse(citations[key].ViolationDate));
@@ -476,8 +448,6 @@ function SendResponses(origTweet, tweets, verbose) {
     tweetText = "@" + replyToScreenName + " " + tweetText;
     (new Promise(function (resolve, reject) {
 
-      //console.log(`Tweeting ${tweetText}`);
-      console.log(`Replying to tweet: ${replyToTweetId}`)
       T.post('statuses/update', {
         status: tweetText,
         in_reply_to_status_id: replyToTweetId,
@@ -492,10 +462,7 @@ function SendResponses(origTweet, tweets, verbose) {
           resolve(data);
         }
       });
-    })).then ( function ( sentTweet ) {
-      console.log(`Replied to tweet:  ${sentTweet.in_reply_to_status_id_str}`);
-      console.log(`Created tweet:     ${sentTweet.id_str}`);
-      
+    })).then ( function ( sentTweet ) {      
       // Wait a bit. It seems tweeting a whackload of tweets in quick succession
       // can cause Twitter to think you're a troll bot or something and then some
       // of the tweets will not display for users other than the bot account.
@@ -655,17 +622,32 @@ function handleError(error) {
 }
 
 function logTweetById(id) {
-  // Quick check to fetch a specific tweet and dump it fully.
-  // TODO: Move to app.all("/dumptweet" ...
-  T.get(`statuses/show/${id}`, function(err, tweet, response) {
-    if (err){
-      handleError(err);
-      return false;
-    }
+  // Quick check to fetch a specific tweet and dump it fullyt
+  var tweet = getTweetById(id);
+  
+  if (tweet) {
+    console.log(`logTweetById (${id}): ${printObject(tweet)}`);
+  }
+}
 
-    console.log(`Retrieved tweet: ${printObject(tweet)}`);
+function getTweetById(id) {
+  // Quick check to fetch a specific tweet.
+  return new Promise((resolve, reject) => {
+    var retTweet;
+    
+    T.get(`statuses/show/${id}`, function(err, tweet, response) {
+      if (err) {
+        handleError(err);
+        reject(tweet);
+      }
+
+      resolve(tweet);
+    });
   });
-
+  
+  promise.then( function (tweet) {
+    return tweet;
+  });
 }
 
 // Fake a sleep function. Call this thusly:

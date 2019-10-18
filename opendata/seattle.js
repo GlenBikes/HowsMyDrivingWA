@@ -24,6 +24,7 @@ async function GetCitationsByPlate(plate, state) {
     GetVehicleIDs(plate, state).then(async function(vehicles) {
       for (var i = 0; i < vehicles.length; i++) {
         var vehicle = vehicles[i];
+        
         await new Promise(function(resolve, reject) {
           console.log(`Getting citations for vehicle #${vehicle.VehicleNumber}.`);
           GetCitationsByVehicleNum(vehicle.VehicleNumber).then(function(
@@ -31,6 +32,17 @@ async function GetCitationsByPlate(plate, state) {
           ) {
             citations.forEach(function(item) {
               allCitations[item.Citation] = item;
+            });
+            resolve();
+          });
+        });
+        
+        await new Promise(function(resolve, reject) {
+          console.log(`Getting cases for vehicle #${vehicle.VehicleNumber}.`);
+          GetCasesByVehicleNum(vehicle.VehicleNumber).then(function( cases ) {
+            cases.forEach(function(item) {
+              console.log(license.printObject(item));
+              //allCases[item.Citation] = item;
             });
             resolve();
           });
@@ -73,6 +85,22 @@ async function GetCitationsByVehicleNum(vehicleID) {
     soap.createClient(url, function(err, client) {
       client.GetCitationsByVehicleNumber(args, function(err, citations) {
         var jsonObj = JSON.parse(citations.GetCitationsByVehicleNumberResult);
+        var jsonResultSet = JSON.parse(jsonObj.Data);
+
+        resolve(jsonResultSet);
+      });
+    });
+  });
+}
+
+async function GetCasesByVehicleNum(vehicleID) {
+  var args = {
+    VehicleNumber: vehicleID
+  };
+  return new Promise((resolve, reject) => {
+    soap.createClient(url, function(err, client) {
+      client.GetCasesByVehicleNumber(args, function(err, cases) {
+        var jsonObj = JSON.parse(cases.GetCasesByVehicleNumberResult);
         var jsonResultSet = JSON.parse(jsonObj.Data);
 
         resolve(jsonResultSet);

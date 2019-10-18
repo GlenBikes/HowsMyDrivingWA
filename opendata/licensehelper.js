@@ -1,6 +1,7 @@
 /* Setting things up. */
 module.exports = {
-  formatPlate: formatPlate
+  formatPlate: formatPlate,
+  printObject: printObject
 };
 
 
