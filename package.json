@@ -1,7 +1,7 @@
 {
-  "name": "gomix-twitterbot",
+  "name": "@HowsMyDrivingWA",
   "version": "0.0.1",
-  "description": "Beep beep tweet!",
+  "description": "Tweet a license # at me! I'll look it up for you.",
   "main": "server.js",
   "scripts": {
     "start": "node start.js",
