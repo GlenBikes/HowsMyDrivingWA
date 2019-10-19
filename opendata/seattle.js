@@ -18,7 +18,6 @@ var url =
   "https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl";
 
 async function GetCitationsByPlate(plate, state) {
-  debugger;
   return new Promise((resolve, reject) => {
     var allCitations = {};
 
