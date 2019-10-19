@@ -36,7 +36,7 @@ async function GetCitationsByPlate(plate, state) {
             resolve();
           });
         });
-        
+        /*
         await new Promise(function(resolve, reject) {
           console.log(`Getting cases for vehicle #${vehicle.VehicleNumber}.`);
           GetCasesByVehicleNum(vehicle.VehicleNumber).then(function( cases ) {
@@ -47,6 +47,7 @@ async function GetCitationsByPlate(plate, state) {
             resolve();
           });
         });
+        */
       }
 
       resolve(allCitations);

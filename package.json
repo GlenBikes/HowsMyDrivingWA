@@ -11,6 +11,8 @@
     "@babel/core": "*",
     "@babel/register": "*",
     "@babel/preset-env": "*",
+    "@babel/runtime": "*",
+    "@babel/plugin-transform-runtime": "*",
     "express": "^4.14.0",
     "interface.js": "^2.0.0",
     "json2html": "*",
