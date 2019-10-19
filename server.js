@@ -73,11 +73,9 @@ T.get('account/verify_credentials', { }, function(err, data, response) {
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function (request, response) {
   /* Respond to @ mentions */
+  /* First, let's load the ID of the last tweet we responded to. */
   var last_mention_id = getLastMentionId();
   if (last_mention_id != undefined) {
-    /* First, let's load the ID of the last tweet we responded to. */
-    console.log(`last_mention_id: ${last_mention_id}`);
-
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get('search/tweets', { q: '%40' + process.env.TWITTER_HANDLE, since_id: last_mention_id, tweet_mode: 'extended' }, function(err, data, response) {
       if (err) {
@@ -107,15 +105,15 @@ app.all("/tweet", function (request, response) {
           Make sure this isn't a reply to one of the bot's tweets which would
           include the bot screen name in full_text, but only due to replies.
           */
-          var displayText = chompTweet(status);
-          
-          if (botScreenNameRegexp.test(displayText)) {
+          const {chomped, chomped_text} = chompTweet(status);
+
+          if (!chomped || botScreenNameRegexp.test(chomped_text)) {
             /* Don't reply to our own tweets. */
             if (status.user.id == app_id) {
               console.log('Ignoring our own tweet: ' + status.full_text);
             }
             else {
-              const {state, plate, verbose} = parseTweet(displayText);
+              const {state, plate, verbose} = parseTweet(chomped_text);
 
               if (state == null || plate == null) {
                 var tweets = [
@@ -158,8 +156,6 @@ app.all("/tweet", function (request, response) {
     last_dm_id = 0;
   }
   
-  console.log(`last_dm_id: ${last_dm_id}`);
-
   T.get('direct_messages', { since_id: last_dm_id, count: 200 }, function(err, dms, response) {
     /* Next, let's DM's to our bot, starting after the last DM we responded to. */
     if (dms.length){
@@ -250,13 +246,18 @@ function chompTweet(tweet) {
   // Strip off those because if UserA tweets a license plate and references the bot and then
   // UserB replies to UserA's tweet without explicitly referencing the bot, we do not want to
   // process that tweet.
+  var chomped = false;
   var text = tweet.full_text;
-  
-  if (tweet.display_text_range != null && tweet.display_text_range.length >= 2) {
+
+  if (tweet.display_text_range != null && tweet.display_text_range.length >= 2 && tweet.display_text_range[0] > 0) {
     text = tweet.full_text.substring(tweet.display_text_range[0]);
+    chomped = true;
   }
   
-  return text;
+  return {
+    chomped: chomped,
+    chomped_text: text
+  }
 }
 
 // Extract the state:license and optional flags from tweet text.
@@ -301,6 +302,8 @@ function GetReplies(plate, state, verbose) {
   return new Promise((resolve, reject) => {
     seattle.GetCitationsByPlate(plate, state).then(function(citations) {
       var tweets = [];
+      
+      console.log("Processing citations.");
 
       if (!citations || Object.keys(citations).length == 0) {
         tweets.push(noCitations + license.formatPlate(plate, state));
@@ -434,6 +437,8 @@ function GetReplies(plate, state, verbose) {
       }
       
       resolve(tweets);
+    }).catch ( function ( e ) {
+      console.log("GetReplies: ERROR! caught error: " + e);
     });
   });
 }
@@ -454,11 +459,10 @@ function SendResponses(origTweet, tweets, verbose) {
         auto_populate_reply_metadata: true
       }, function(err, data, response) {
         if (err){
-            /* TODO: Proper error handling? */
-          handleError(err);
           reject(err);
         }
         else{
+          console.log(`Sent tweet: ${printTweet(data)}`);
           resolve(data);
         }
       });
@@ -472,6 +476,8 @@ function SendResponses(origTweet, tweets, verbose) {
           SendResponses(sentTweet, tweets, verbose);
         //});
       }
+    }).catch( function ( err ) {
+      handleError(err);
     });
   }
   catch ( e ) {
@@ -635,7 +641,7 @@ function getTweetById(id) {
   return new Promise((resolve, reject) => {
     var retTweet;
     
-    T.get(`statuses/show/${id}`, function(err, tweet, response) {
+    T.get(`statuses/show/${id}`, { tweet_mode: 'extended'}, function(err, tweet, response) {
       if (err) {
         handleError(err);
         reject(tweet);

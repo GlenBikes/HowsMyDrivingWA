@@ -18,6 +18,7 @@ var url =
   "https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl";
 
 async function GetCitationsByPlate(plate, state) {
+  debugger;
   return new Promise((resolve, reject) => {
     var allCitations = {};
 
@@ -36,7 +37,7 @@ async function GetCitationsByPlate(plate, state) {
             resolve();
           });
         });
-        
+        /*
         await new Promise(function(resolve, reject) {
           console.log(`Getting cases for vehicle #${vehicle.VehicleNumber}.`);
           GetCasesByVehicleNum(vehicle.VehicleNumber).then(function( cases ) {
@@ -47,6 +48,7 @@ async function GetCitationsByPlate(plate, state) {
             resolve();
           });
         });
+        */
       }
 
       resolve(allCitations);
