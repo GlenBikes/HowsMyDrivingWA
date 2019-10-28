@@ -1,5 +1,5 @@
 {
-  "name": "@HowsMyDrivingWA",
+  "name": "HowsMyDrivingWA",
   "version": "0.0.1",
   "description": "Tweet a license # at me! I'll look it up for you.",
   "main": "server.js",
@@ -8,6 +8,7 @@
     "test": "mocha"
   },
   "dependencies": {
+    "aws-sdk": "*",
     "@babel/core": "*",
     "@babel/register": "*",
     "@babel/preset-env": "*",
@@ -22,6 +23,7 @@
     "prepend-file": "*",
     "soap": "*",
     "twit": "^2.1.0",
+    "uuid/v1": "*",
     "xml-js": "*"
   },
   "engines": {
