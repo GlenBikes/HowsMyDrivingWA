@@ -23,7 +23,7 @@
     "prepend-file": "*",
     "soap": "*",
     "twit": "^2.1.0",
-    "uuid/v1": "*",
+    "uuid": "*",
     "xml-js": "*"
   },
   "engines": {

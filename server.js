@@ -1,10 +1,12 @@
 // Exported functions for tests
 module.exports = {
   _chompTweet: chompTweet,
-  _parseTweet: parseTweet
+  _parseTweet: parseTweet,
+  _splitLines: SplitLongLines
 };
 
 import JSON2HTML from "./json2html/json2html.js";
+
 
 /* Setting things up. */
 var AWS = require("aws-sdk"),
@@ -14,7 +16,7 @@ var AWS = require("aws-sdk"),
   app = express(),
   soap = require("soap"),
   Twit = require("twit"),
-  convert = require("xml-js"),
+  convert = require("xml-js"), 
   Mocha = require("mocha"),
   uuidv1 = require("uuid/v1"),
   license = require("./opendata/licensehelper"),
@@ -27,7 +29,9 @@ var AWS = require("aws-sdk"),
       access_token_secret: process.env.ACCESS_TOKEN_SECRET
     }
   },
-  T = new Twit(config.twitter),
+  T = new Twit(config.twitter);
+
+const MAX_RECORDS_BATCH = 2000,
   maxIdFileLen = 100,
   maxErrorFileLen = 100,
   lastDMFilename = "last_dm_id.txt",
@@ -71,11 +75,9 @@ AWS.config.getCredentials(function(err) {
   }
 });
 */
-var maxTweetLength = 280;
+var maxTweetLength = 280;  // TODO: Shorten this to account for the replying-to user account so we don't have calculations scattered all over the place
 var tweets = [];
 var noCitations = "No citations found for plate # ";
-var noValidPlate =
-  "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #";
 var parkingAndCameraViolationsText =
   "Total parking and camera violations for #";
 var violationsByYearText = "Violations by year for #";
@@ -108,7 +110,7 @@ var myTokens = ":".split(":");
 
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request, response) {
-  var ddb = new AWS.DynamoDB.DocumentClient();
+  var docClient = new AWS.DynamoDB.DocumentClient();
 
   /* Respond to @ mentions */
   /* First, let's load the ID of the last tweet we responded to. */
@@ -155,8 +157,11 @@ app.all("/tweet", function(request, response) {
             const { chomped, chomped_text } = chompTweet(status);
 
             if (!chomped || botScreenNameRegexp.test(chomped_text)) {
-              /* Don't reply to our own tweets. */
-              if (status.user.id == app_id) {
+              /* Don't reply to retweet or our own tweets. */
+              if (status.hasOwnProperty('retweet_status')) {
+                console.log(`Ignoring retweet: ${status.full_text}`);
+              }
+              else if (status.user.id == app_id) {
                 console.log("Ignoring our own tweet: " + status.full_text);
               } else {
                 const { state, plate, verbose } = parseTweet(chomped_text);
@@ -206,10 +211,11 @@ app.all("/tweet", function(request, response) {
             }
 
             var batchWritePromise = new Promise( (resolve, reject) => {
-              ddb.batchWrite(params, function(err, data) {
+              docClient.batchWrite(params, function(err, data) {
                 if (err) {
                   handleError(err);
                 }
+                resolve(data);
               });
             });
             
@@ -220,8 +226,10 @@ app.all("/tweet", function(request, response) {
 
           // Wait for all the request writes to complete to
           // ensure none of the writes failed.
+          console.log(`About to wait for batchWritePromises (${batchWritePromises.length}).`);
           Promise.all(batchWritePromises)
             .then(function(results) {
+              console.log(`batchWritePromises resolved. Setting last_mention_id.txt (${maxTweetIdRead})`);
               if (maxTweetIdRead > last_mention_id) {
                 setLastMentionId(maxTweetIdRead);
               }
@@ -336,11 +344,7 @@ app.all("/dumpcitations", function(request, response) {
     plate = request.query.plate;
   }
 
-  GetCitations(plate, state, true).then(function(err, citations) {
-    if (err) {
-      handleError(err);
-    }
-    
+  seattle.GetCitationsByPlate(plate, state).then(function(citations) {
     var body = "Citations found:\n";
 
     if (!citations || citations.length == 0) {
@@ -349,6 +353,8 @@ app.all("/dumpcitations", function(request, response) {
       // TODO: Can we just send the whole array as json?
       response.json(citations);
     }
+  }).catch( function ( err ) {
+    handleError(err);
   });
 
   response.sendStatus(200);
@@ -362,7 +368,7 @@ app.all("/errors", function(request, response) {
 });
 
 app.all("/processrequests", function(request, response) {
-  var ddb = new AWS.DynamoDB.DocumentClient();
+  var docClient = new AWS.DynamoDB.DocumentClient();
 
   var citations = [];
 
@@ -380,17 +386,19 @@ app.all("/processrequests", function(request, response) {
     }
   };
 
-  ddb.query(params, function(err, data) {
+  docClient.query(params, function(err, data) {
     if (err) {
       handleError(err);
     } else {
       console.log(`Found ${data.Count} requests to process.`)
 
       if (data.Count > 0) {
+        console.log(`Processing requests.`);
         // HACK! HACK! HACK! What to do about verbose?
         var verbose = true;
 
         data.Items.forEach( function( item ) {
+          console.log(`Processing request ${item.id}.`);
           var citation_records = [];
           var tokens = item.license.split(":");
           var state;
@@ -407,6 +415,7 @@ app.all("/processrequests", function(request, response) {
             var citation = new Object();
             var now = new Date().valueOf();
             citation.id = uuidv1(),
+            citation.Citation = seattle.CitationIDNoCitationsFound;
             citation.request_id = item.id;
             citation.license = item.license;
             citation.created = now,
@@ -424,13 +433,39 @@ app.all("/processrequests", function(request, response) {
               }
             });
           } else {
-            GetCitations(plate, state, verbose)
+            console.log(`Getting citations for ${state}:${plate}.`);
+            
+            seattle.GetCitationsByPlate(plate, state)
               .then(function(citations) {
+              console.log(`Got ${citations.length} citations for ${state}:${plate}.`);
               if (!citations || citations.length == 0) {
-                // TODO: How to indicate? Just mark the request as processed?
                 console.log(`No citations found for request ${item.id}.`);
+                
+                var citation = new Object();
+                var now = new Date().valueOf();
+                citation.id = uuidv1(),
+                citation.Citation = seattle.CitationIDNoPlateFound;
+                citation.request_id = item.id;
+                citation.license = item.license;
+                citation.created = now,
+                citation.updated = now,
+                citation.tweet_id = item.tweet_id;
+                citation.tweet_id_str = item.tweet_id_str;
+                citation.tweet_user_id = item.tweet_user_id;
+                citation.tweet_user_id_str = item.tweet_user_id_str;
+                citation.tweet_user_screen_name = item.tweet_user_screen_name;
+                citation.processing_status = "UNPROCESSED";
+
+                mungeCitation(citation);
+
+                citation_records.push({
+                  PutRequest: {
+                    Item: citation
+                  }
+                });
               } else {
                 citations.forEach( (citation) => {
+                  console.log(`Processing citation ${citation.Citation}.`);
                   var now = new Date().valueOf();
 
                   // Add the primary and sort keys
@@ -474,7 +509,7 @@ app.all("/processrequests", function(request, response) {
                 };
 
                 var batchWritePromise = new Promise( (resolve, reject) => {
-                    ddb.batchWrite(params, function(err, data) {
+                    docClient.batchWrite(params, function(err, data) {
                       if (err) {
                         handleError(err);
                       }
@@ -494,6 +529,7 @@ app.all("/processrequests", function(request, response) {
               // where one or more of these writes failed.
               Promise.all(batchWritePromises)
                 .then(function(results) {
+                  console.log(`batchWrite of citations successful, updating request ${item.id}.`);
                   var params = {
                     TableName: "HMDWA_Request",
                     Key: {
@@ -511,11 +547,13 @@ app.all("/processrequests", function(request, response) {
                     }
                   };
 
-                  ddb.update(params, function(err, data) {
+                  console.log(`About to update request ${item.id}.`);
+                
+                  docClient.update(params, function(err, data) {
                     if (err) {
                       handleError(err);
                     } else {
-                      console.log(`Updated request id=${item.id}: ${data}`);
+                      console.log(`Updated request id=${item.id}.`);
                     }
                   });
                 })
@@ -538,25 +576,31 @@ app.all("/processrequests", function(request, response) {
 app.all("/processcitations", function(request, response) {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
-  GetCitationRecords(function(err, citations) {
+  GetCitationRecords().then( function(citations) {
+    console.log(`Processing ${citations.length} citations...`);
+    
     var citationsByRequest = {};
     
     // Sort them based on request
-    //citations.forEach(function(citation, index) {
-    for (var citation in citations) {
+    citations.forEach( function( citation ) {
       if (!(citation.request_id in citationsByRequest)) {
         citationsByRequest[citation.request_id] = new Array();
       }
 
       citationsByRequest[citation.request_id].push(citation);
-    }
+    });
+    
+    console.log(`Got ${citations.length} citations from ${Object.keys(citationsByRequest).length} requests.`)
 
     // Now process the citations, on a per-request basis
-    //Object.keys(citationsByRequest).forEach(function(request_id) {
-    for (var request_id in citationsByRequest) {
+    Object.keys(citationsByRequest).forEach(function(request_id) {
+      console.log(`Processing citations for request_id: ${request_id}.`);
+      debugger;
+      
       // Get the first citation to access citation columns
       var citation = citationsByRequest[request_id][0];
-      var report_items = seattle.ProcessCitations(
+      console.log(`Calling seattle.ProcessCitationsForRequest with ${citationsByRequest[request_id].length} citations.`);
+      var report_items = seattle.ProcessCitationsForRequest(
         citationsByRequest[request_id]
       );
 
@@ -567,24 +611,29 @@ app.all("/processcitations", function(request, response) {
       console.log("monetary_summary: " + "not implemented");
 
       var report_records = [];
-      //report_items.forEach(function(report_item) {
-      for (var report_item in report_items) {
-        var report_record = new Object();
-
-        report_record.request_id = citation.request_id;
-        report_record.tweet_id = citation.tweet_id;
-        report_record.tweet_id_str = citation.tweet_id_str;
-        report_record.license = citation.license;
-        report_record.processing_status = "UNPROCESSED";
-        report_record.tweet_user_id = citation.tweet_user_id;
-        report_record.tweet_user_id_str = citation.tweet_user_id_str;
-        report_record.tweet_user_screen_name = citation.tweet_user_screen_name;
+      var now = new Date().valueOf();
+      
+      report_items.forEach( report_item => {
+        var report_record = {
+          id: uuidv1(),
+          created: now,
+          modified: now,
+          full_text: report_item,
+          request_id: citation.request_id,
+          tweet_id: citation.tweet_id,
+          tweet_id_str: citation.tweet_id_str,
+          license: citation.license,
+          processing_status: "UNPROCESSED",
+          tweet_user_id: citation.tweet_user_id,
+          tweet_user_id_str: citation.tweet_user_id_str,
+          tweet_user_screen_name: citation.tweet_user_screen_name
+        }
         report_records.push({
           PutRequest: {
             Item: report_record
           }
         });
-      }
+      });
 
       // Write the tweets to the db
       // DynamoDB batchWrite only supports up to 25 items
@@ -600,7 +649,7 @@ app.all("/processcitations", function(request, response) {
 
         let params = {
           RequestItems: {
-            HMDWA_Tweets: report_records.slice(startPos, endPos)
+            HMDWA_ReportItems: report_records.slice(startPos, endPos)
           }
         };
 
@@ -622,8 +671,10 @@ app.all("/processcitations", function(request, response) {
       // Wait for all the citation writes to complete to
       // ensure we don't update the request in the case
       // where one or more of these writes failed.
+      console.log(`Waiting for all ${batchWritePromises.length} promises to resolve for tweet batchWrite operations.`);
       Promise.all(batchWritePromises)
         .then(function(results) {
+        console.log(`batchWrite promises for tweets have finished.`)
       }).catch(function(err) {
         handleError(err);
       });
@@ -635,20 +686,25 @@ app.all("/processcitations", function(request, response) {
       // Write the tweets to the db
       // DynamoDB batchWrite only supports up to 25 items
       var citation_records = [];
-      //citationsByRequest[request_id].forEach(function(citation) {
-      for (citation in citationsByRequest) {
+      var now = new Date().valueOf();
+      
+      citationsByRequest[request_id].forEach( (citation) => {
+        console.log(`In for loop. citation: ${printObject(citation)}, citationsByRequest: ${printObject(citationsByRequest)})`);
+        
         citation.processing_status = "PROCESSED";
+        citation.modified = now;
 
         citation_records.push({
           PutRequest: {
             Item: citation
           }
         });
-      }
+      });
 
       var startPos = 0;
       var endPos;
 
+      batchWritePromises = [];
       while (startPos < citation_records.length) {
         endPos = startPos + 25;
         if (endPos > citation_records.length) {
@@ -662,7 +718,7 @@ app.all("/processcitations", function(request, response) {
         };
 
         // Let this go asynchronously.
-        docClient.batchWrite(params, function(err, data) {
+        var batchWritePromise = docClient.batchWrite(params, function(err, data) {
           if (err) {
             handleError(err);
           } else {
@@ -672,14 +728,133 @@ app.all("/processcitations", function(request, response) {
             );
           }
         });
+        
+        batchWritePromises.push(batchWritePromise);
 
         startPos = endPos;
       }
-    }
+      
+      // Wait for all the batchWrite operations to succeed.
+      console.log(`Waiting for all ${batchWritePromises.length} promises to resolve for updating citation batchWrite operations.`);
+      Promise.all(batchWritePromises)
+        .then(function(results) {
+        console.log(`batchWrite promises for citation updates have finished.`)
+      }).catch(function(err) {
+        handleError(err);
+      });
+    });
+  }).catch ( err => {
+    handleError(err);
   });
 
   response.sendStatus(200);
 });
+
+app.all("/processreportitems", function(request, response) {
+  var docClient = new AWS.DynamoDB.DocumentClient();
+
+  GetReportItemRecords().then( function( report_items ) {
+    console.log(`Processing ${report_items.length} report_items...`);
+    
+    debugger;
+    
+    var reportItemsByRequest = {};
+    
+    // Sort them based on request
+    report_items.forEach( report_item => {
+      if (!(report_item.request_id in reportItemsByRequest)) {
+        reportItemsByRequest[report_item.request_id] = new Array();
+      }
+
+      reportItemsByRequest[report_item.request_id].push(report_item);
+    });
+
+    // Now process the report_items, on a per-request basis
+    Object.keys(reportItemsByRequest).forEach( request_id => {
+      // Get the first report_item to access report_item columns
+      var report_item = reportItemsByRequest[request_id][0];
+      // Build a fake tweet for the request report_item
+      var origTweet = {
+        id: report_item.tweet_id,
+        id_str: report_item.tweet_id_str,
+        user: {
+          screen_name: report_item.tweet_user_screen_name
+        }
+      }
+    
+      SendResponses(origTweet, report_items);
+
+      // Set the processing status of all the report_items
+      // DynamoDB has no way to do a bulk update of items based on a query
+      // of an index which is in the WFT?! bucket. But here we are.
+      // Build an explicit update.
+      // Write the report_items to the db
+      // DynamoDB batchWrite only supports up to 25 items
+      var report_item_records = [];
+      var now = new Date().valueOf();
+      
+      reportItemsByRequest[request_id].forEach( report_item => {
+        report_item.processing_status = "PROCESSED";
+        report_item.modified = now;
+
+        report_item_records.push({
+          PutRequest: {
+            Item: report_item
+          }
+        });
+      });
+
+      var startPos = 0;
+      var endPos;
+
+      var batchWritePromises = [];
+      while (startPos < report_item_records.length) {
+        endPos = startPos + 25;
+        if (endPos > report_item_records.length) {
+          endPos = report_item_records.length;
+        }
+
+        let params = {
+          RequestItems: {
+            HMDWA_ReportItems: report_item_records.slice(startPos, endPos)
+          }
+        };
+
+        // Do the updates in batches of 25.
+        var batchWritePromise = docClient.batchWrite(params, function(err, data) {
+          if (err) {
+            handleError(err);
+          } else {
+            console.log(
+              "Batch update of report_items to PROCESSED: Success",
+              data
+            );
+          }
+        });
+        
+        batchWritePromises.push(batchWritePromise);
+
+        startPos = endPos;
+      }
+      
+      // Wait for all the batchWrite operations to succeed.
+      console.log(`Waiting for all ${batchWritePromises.length} promises to resolve for updating report_item batchWrite operations.`);
+      Promise.all(batchWritePromises)
+        .then(function(results) {
+        console.log(`batchWrite promises for report_item updates have finished.`)
+      }).catch(function(err) {
+        handleError(err);
+      });
+    })
+  }).catch ( function ( err ) {
+    handleError(err);
+  });
+
+  response.sendStatus(200);
+});
+
+
+
 
 function chompTweet(tweet) {
   // Extended tweet objects include the screen name of the tweeting user within the full_text,
@@ -762,188 +937,20 @@ function mungeCitation( citation ) {
   }
 }
 
-function GetReplies(plate, state, verbose) {
-  var categorizedCitations = {};
-  var chronologicalCitations = {};
-  var violationsByYear = {};
-  var violationsByStatus = {};
-  verbose = true;
-
-  GetCitations(plate, state, verbose).then(function(citations) {
-    var tweets = [];
-    
-    if (!citations || citations.length == 0) {
-      tweets.push(noCitations + license.formatPlate(plate, state));
-    } else {
-      for (var citation in citations) {
-        var year = "Unknown";
-        var violationDate = new Date(Date.now());
-
-        try {
-          violationDate = new Date(
-            Date.parse(citation.ViolationDate)
-          );
-        } catch (e) {
-          handleError(
-            new Error(`Error parsing date ${citations.ViolationDate}.`)
-          );
-          handleError(e);
-        }
-
-        if (!(violationDate in chronologicalCitations)) {
-          chronologicalCitations[violationDate] = new Array();
-        }
-
-        chronologicalCitations[violationDate].push(citation);
-
-        if (!(citations[key].Type in categorizedCitations)) {
-          categorizedCitations[citation.Type] = 0;
-        }
-        categorizedCitations[citation.Type]++;
-
-        if (!(citations[key].Status in violationsByStatus)) {
-          violationsByStatus[citation.Status] = 0;
-        }
-        violationsByStatus[citation.Status]++;
-
-        year = violationDate.getFullYear();
-
-        if (!(year in violationsByYear)) {
-          violationsByYear[year] = 0;
-        }
-
-        violationsByYear[year]++;
-      }
-
-      var tweetText =
-        parkingAndCameraViolationsText +
-        license.formatPlate(plate, state) +
-        ": " +
-        citations.length;
-
-      for (var key in Object.keys(categorizedCitations)) {
-        var tweetLine = key + ": " + categorizedCitations[key];
-
-        // Max twitter username is 15 characters, plus the @
-        if (tweetText.length + tweetLine.length + 1 + 16 > maxTweetLength) {
-          tweets.push(tweetText);
-          tweetLine = "";
-          tweetText = tweetLine;
-        } else {
-          tweetText += "\n";
-          tweetText += tweetLine;
-        }
-      }
-
-      if (tweetText.length > 0) {
-        tweetText += "\n";
-        tweets.push(tweetText);
-      }
-
-      if (verbose) {
-        tweetText = "";
-
-        var sortedChronoCitationKeys = Object.keys(
-          chronologicalCitations
-        ).sort(function(a, b) {
-          return new Date(a).getTime() - new Date(b).getTime();
-        });
-
-        for (var key in sortedChronoCitationKeys) {
-          for (var citation in chronologicalCitations[key]) {
-            var tweetLine =
-              citation.ViolationDate +
-              ", " +
-              citation.Type +
-              ", " +
-              citation.ViolationLocation +
-              ", " +
-              citation.Status;
-
-            // Max twitter username is 15 characters, plus the @
-            // HACK!!HACK!!HACK!!HACK!!HACK!! Remove 2nd +16
-            if (
-              tweetText.length + tweetLine.length + 1 + 16 + 16 >
-              maxTweetLength
-            ) {
-              tweets.push(tweetText);
-              tweetText = tweetLine;
-              tweetLine = "";
-            } else {
-              tweetText += "\n";
-              tweetText += tweetLine;
-            }
-          }
-        }
-
-        if (tweetText.length > 0) {
-          tweets.push(tweetText);
-        }
-      }
-
-      tweetText =
-        violationsByYearText + license.formatPlate(plate, state) + ":";
-      
-      for (var key in Object.keys(violationsByYear)) {
-        var tweetLine = key + ": " + violationsByYear[key];
-
-        // Max twitter username is 15 characters, plus the @
-        if (tweetText.length + tweetLine.length + 1 + 16 > maxTweetLength) {
-          tweets.push(tweetText);
-          tweetLine = "";
-          tweetText = tweetLine;
-        } else {
-          tweetText += "\n";
-          tweetText += tweetLine;
-        }
-      }
-
-      if (tweetText.length > 0) {
-        tweets.push(tweetText);
-      }
-
-      tweetText =
-        violationsByStatusText + license.formatPlate(plate, state) + ":";
-      
-      for (var key in Object.keys(violationsByStatus)) {
-        var tweetLine = key + ": " + violationsByStatus[key];
-
-        // Max twitter username is 15 characters, plus the @
-        if (tweetText.length + tweetLine.length + 1 + 16 > maxTweetLength) {
-          tweets.push(tweetText);
-          tweetLine = "";
-          tweetText = tweetLine;
-        } else {
-          tweetText += "\n";
-          tweetText += tweetLine;
-        }
-      }
-
-      if (tweetText.length > 0) {
-        tweets.push(tweetText);
-      }
-    }
-
-    return tweets;
-  })
-  .catch(function(e) {
-    handleError(e);
-  });
-}
-
-function GetCitations(plate, state, verbose) {
-  return seattle
-      .GetCitationsByPlate(plate, state);
-}
-
-function SendResponses(origTweet, tweets, verbose) {
-  var tweetText = tweets.shift();
+function SendResponses(origTweet, report_items) {
+  if (tweets.report_items == 0) {
+    return;
+  }
+  
+  debugger;
+  
+  var report_item = report_items.shift();
   var replyToScreenName = origTweet.user.screen_name;
   var replyToTweetId = origTweet.id_str;
 
   try {
     /* Now we can respond to each tweet. */
-    tweetText = "@" + replyToScreenName + " " + tweetText;
+    var tweetText = "@" + replyToScreenName + " " + report_item.full_text;
     new Promise(function(resolve, reject) {
       T.post(
         "statuses/update",
@@ -956,26 +963,22 @@ function SendResponses(origTweet, tweets, verbose) {
           if (err) {
             reject(err);
           } else {
+            console.log(`Sent tweet: ${printTweet(data)}.`)
             resolve(data);
           }
         }
       );
+    }).then( function( sentTweet ) {
+      // Wait a bit. It seems tweeting a whackload of tweets in quick succession
+      // can cause Twitter to think you're a troll bot or something and then some
+      // of the tweets will not display for users other than the bot account.
+      // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
+      SendResponses(sentTweet, report_items);
     })
-      .then(function(sentTweet) {
-        // Wait a bit. It seems tweeting a whackload of tweets in quick succession
-        // can cause Twitter to think you're a troll bot or something and then some
-        // of the tweets will not display for users other than the bot account.
-        // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-        if (tweets.length > 0) {
-          //sleep(500).then(() => {
-          SendResponses(sentTweet, tweets, verbose);
-          //});
-        }
-      })
-      .catch(function(err) {
-        handleError(err);
-      });
-  } catch (e) {
+    .catch( function( err ) {
+      handleError(err);
+    });
+  } catch ( e ) {
     handleError(e);
   }
 }
@@ -1177,16 +1180,14 @@ function getTweetById(id) {
 // sleep(500).then(() => {
 //   do stuff
 // })
-// Or similar pattrs that use the Promise:
-// async function myFunc() {
-//   await sleep(1000);
-// }
+// Or similar pattrs that use a Promise
 const sleep = milliseconds => {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 };
 
-// synchronous query funciton to fetch all citation records
-// TODO: This needs to be rewritten to not fetch all citations
+// synchronous query function to fetch all citation records
+// TODO: Rewrite to only make multiple queries to citation table if there
+//       are more than some max # of citations we can handle in memory.
 // If the bot that processes citations (or tweets) is down for an extended
 // period of time, this can easily return an amount of data that would
 // consume more than available memory.
@@ -1203,8 +1204,12 @@ const sleep = milliseconds => {
 // period of time.
 // NOTE: Could do a full table scan to find list of unique request_id's, but
 // you pay AWS for the full table scan (i.e. $$$).
-var GetCitationRecords = function(callback) {
+function GetCitationRecords() {
   var docClient = new AWS.DynamoDB.DocumentClient();
+  
+  console.log(`Getting citation records.`);
+  
+  var citation_records = [];
   
   // Query unprocessed requests
   var params = {
@@ -1218,23 +1223,325 @@ var GetCitationRecords = function(callback) {
     },
     ExpressionAttributeValues: {
       ":pkey": "UNPROCESSED"
-    }
+    },
+    Limit: MAX_RECORDS_BATCH,  // If more than this, we'll have to handle it below
   };
-  var items = [];
-  var queryExecute = function(callback) {
-    docClient.query(params, function(err, result) {
+
+  return new Promise( function (resolve, reject) {
+    // 1. Do a query to get just the citations that are UNPROCESSED. 
+    //    If the result is not complete, then we have to take the request_id's
+    //    we got back and do individual queries for UNPROCESSED citations for
+    //    each request_id. This ensures we process all the citations for a given
+    //    request together. This is required cause we tweet out summaries/totals.
+    docClient.query(params, async function(err, result) {
       if (err) {
-        callback(err);
+        handleError(err);
       } else {
-        items = items.concat(result.Items);
-        if (result.LastEvaluatedKey) {
-          params.ExclusiveStartKey = result.LastEvaluatedKey;
-          queryExecute(callback);
-        } else {
-          callback(err, items);
+        console.log(`Citation query returned with ${result.Items.length} citations.`);
+
+        // 2. De-dupe the returned request_id's.
+        var requestIDs = {};
+
+        result.Items.forEach( function (item) {
+          requestIDs[item.request_id] = 1;
+        })
+
+        // 3. Check if we retrieved all the unprocessed citations
+        if (result.hasOwnProperty("last_evaluated_key") && result.last_evaluated_key) {
+          console.log("We are paging!");
+
+          // Paging!!!!
+          // Fall back to making additional query for each request_id we have, looping
+          // until we get MAX_RECORDS_BATCH records.
+          var requestIndex = 0;
+          
+          while (citation_records.length < MAX_RECORDS_BATCH && requestIndex < Object.keys(requestIDs).length) {
+            var requestID = requestIDs[Object.keys(requestIDs[requestIndex])];
+            requestIndex++;
+            
+            // 3a. Query for the citations for this request_id
+            console.log(`Querying for citations for request_id ${requestID}, processing status UNPROCESSED.`);
+
+            // Use the index which includes request_id.
+            params.IndexName = "request_id-processing_status-index";
+            params.KeyConditionExpression = "#request_id = :rkey AND #processing_status = :pkey";
+            params.ExpressionAttributeNames["#request_id"] = "request_id";
+            params.ExpressionAttributeValues[":rkey"] = requestID;
+            params.Limit = MAX_RECORDS_BATCH; // If there is a license with more citations than this... good enough
+
+            // Note: We are assuming that no single request will result in > MAX_RECORDS_BATCH citations.
+            await docClient.query(params, function(err, result) {
+              if (err) {
+                handleError(err);
+              } else {
+                console.log(`Citation query for request_id ${requestID} returned with ${result.Items.length} citations.`);
+
+                citation_records.push(result.Items);
+              }
+            });
+          }
         }
+        else {
+          console.log(`Not paging. Returning all ${result.Items.length} citations.`);
+          citation_records = result.Items;
+        }
+        
+        console.log(`Resolving GetCitationRecords promise with ${citation_records.length} citations.`);
+        resolve(citation_records);
       }
     });
+  });
+}
+
+function GetReportItemRecords() {
+  var docClient = new AWS.DynamoDB.DocumentClient();
+  
+  console.log(`Getting report item records.`);
+  
+  var report_item_records = [];
+  
+  // Query unprocessed requests
+  var params = {
+    TableName: "HMDWA_ReportItems",
+    IndexName: "processing_status-index",
+    Select: "ALL_ATTRIBUTES",
+
+    KeyConditionExpression: "#processing_status = :pkey",
+    ExpressionAttributeNames: {
+      "#processing_status": "processing_status"
+    },
+    ExpressionAttributeValues: {
+      ":pkey": "UNPROCESSED"
+    },
+    Limit: MAX_RECORDS_BATCH,  // If more than this, we'll have to handle it below
   };
-  queryExecute(callback);
-};
+
+  return new Promise( function (resolve, reject) {
+    // 1. Do a query to get just the report items that are UNPROCESSED. 
+    //    If the result is not complete, then we have to take the request_id's
+    //    we got back and do individual queries for UNPROCESSED report items for
+    //    each request_id. This ensures we process all the report_items for a given
+    //    request together. This is required since we can't handle finding some
+    // .  additional report items the next time we wake up to process report items.
+    docClient.query(params, async function(err, result) {
+      if (err) {
+        handleError(err);
+      } else {
+        console.log(`Report item query returned with ${result.Items.length} report items.`);
+
+        // 2. De-dupe the returned request_id's.
+        var requestIDs = {};
+
+        result.Items.forEach( function (item) {
+          requestIDs[item.request_id] = 1;
+        })
+
+        // 3. Check if we retrieved all the unprocessed report items
+        if (result.hasOwnProperty("last_evaluated_key") && result.last_evaluated_key) {
+          console.log("We are paging through report items!");
+
+          // Paging!!!!
+          // Fall back to making additional query for each request_id we have, looping
+          // until we get MAX_RECORDS_BATCH records.
+          var requestIndex = 0;
+          
+          while (report_item_records.length < MAX_RECORDS_BATCH && requestIndex < Object.keys(requestIDs).length) {
+            var requestID = requestIDs[Object.keys(requestIDs[requestIndex])];
+            requestIndex++;
+            
+            // 3a. Query for the report items for this request_id
+            console.log(`Querying for report items for request_id ${requestID}, processing status UNPROCESSED.`);
+
+            // Use the index which includes request_id.
+            params.IndexName = "request_id-processing_status-index";
+            params.KeyConditionExpression = "#request_id = :rkey AND #processing_status = :pkey";
+            params.ExpressionAttributeNames["#request_id"] = "request_id";
+            params.ExpressionAttributeValues[":rkey"] = requestID;
+            params.Limit = MAX_RECORDS_BATCH;
+
+            // Note: We are assuming that no single request will result in > MAX_RECORDS_BATCH report items.
+            await docClient.query(params, function(err, result) {
+              if (err) {
+                handleError(err);
+              } else {
+                console.log(`Report ite, query for request_id ${requestID} returned with ${result.Items.length} report items.`);
+
+                report_item_records.push(result.Items);
+              }
+            });
+          }
+        }
+        else {
+          console.log(`Not paging. Returning all ${result.Items.length} report items.`);
+          report_item_records = result.Items;
+        }
+        
+        console.log(`Resolving GetReportItemRecords promise with ${report_item_records.length} report items.`);
+        resolve(report_item_records);
+      }
+    });
+  });
+}
+
+function WriteReportItemRecords( request_id, report_items ) {
+  var truncated_report_items = [];
+  var docClient = new AWS.DynamoDB.DocumentClient();
+
+  // 1. Go through all report_items and split up any that will be > 280 characters when tweeted.
+  // TODO: We should probably do this when processing the records, not before writing them.
+  report_items = SplitLongLines(report_items, maxTweetLength);
+  
+  // 2. Build the tweet records
+  var now = new Date().valueOf();
+  var report_item_records = [];
+  for (const tweet_text in truncated_report_items) {
+    var item = {
+      PutRequest: {
+        Item: {
+          id: uuidv1(),
+          request_id: request_id,
+          created: now,
+          modified: now,
+          processing_status: "UNPROCESSED",
+          tweet_text: tweet_text
+        }
+      }
+    };
+    
+    report_item_records.push(item);
+  }
+  
+  // 3. Write the tweet records. DynamoDB batchWrite only supports up to 25 items at a time.
+  var startPos = 0;
+  var endPos;
+  var batchWritePromises = [];
+  while (startPos < report_item_records.length) {
+    endPos = startPos + 25;
+    if (endPos > report_item_records.length) {
+      endPos = report_item_records.length;
+    }
+
+    let params = {
+      RequestItems: {
+        HMDWA_ReportItems: report_item_records.slice(startPos, endPos)
+      }
+    };
+
+    var batchWritePromise = new Promise( (resolve, reject) => {
+        docClient.batchWrite(params, function(err, data) {
+          if (err) {
+            handleError(err);
+          }
+
+          // TODO: Handle data.UnprocessedItems
+          resolve(data);
+        });
+    });
+
+    batchWritePromises.push(batchWritePromise);
+
+    startPos = endPos;
+  }
+
+  // 4. Wait for all the tweet writes to complete.
+  console.log(`About to wait for batchWritePromises (${batchWritePromises.length}).`);
+  Promise.all(batchWritePromises)
+    .then(function(results) {
+      console.log(`Finished writing ${report_item_records.length} tweet records for request ${request_id}.`);
+    
+      var params = {
+        TableName: "HMDWA_Citations",
+        IndexName: "request_id-index",
+        Select: "ALL_ATTRIBUTES",
+
+        KeyConditionExpression: "#request_id = :reqid",
+        ExpressionAttributeNames: {
+          "#request_id": "request_id"
+        },
+        ExpressionAttributeValues: {
+          ":reqid": request_id
+        },
+        Limit: MAX_RECORDS_BATCH  // If more than this, we already ignored them. // TODO: We should still page here to set them all to PROCESSED.
+      };
+    
+      // 5. Query for the citation records for this request_id.
+      docClient.query(params, function(err, result) {
+        if (err) {
+          handleError(err);
+        } else {
+          console.log(`Citation query (for update to PROCESSED) returned with ${result.Items.length} citations.`);
+          
+          // 6. Buid the update records.
+        }
+      });
+    
+    
+    
+    
+    
+
+      // 1. Do a query to get just the request_id values for citations that are UNPROCESSED. 
+      //    If the result is not complete, that's fine, we will get the rest of them 
+      //    the next time the bot wakes us up.
+      docClient.query(params, function(err, result) {
+        if (err) {
+          handleError(err);
+        } else {
+          console.log(`Citation query returned with ${result.Items.length} citations.`);
+        }
+      });   
+    })
+    .catch(function(e) {
+      handleError(e);
+    });
+}
+
+function SplitLongLines(source_lines, maxLen) {
+  var truncated_lines = [];
+  
+  source_lines.forEach( (source_line) => {
+    // Break up long lines into lines < maxLen characters.
+    if (source_line.length > maxLen) {
+      // break it up into lines to start with
+      var chopped_lines = source_line.split('\n');
+
+      chopped_lines.forEach( (line) => {
+        if (line.length > maxLen) {
+          // OK we have a single line that is too long for a tweet
+          // word break it into multiple report_items.
+          var truncate_index = maxLen-1;
+
+          // Go back until we hit a whitespace characater
+          while (truncate_index > 0 && !(/\s/.test(line[truncate_index]))) {
+            truncate_index--;
+          }
+
+          if (truncate_index == 0) {
+            // The line has no whitespace in it, just chop it in two
+            truncate_index = maxLen-1;
+          }
+
+          truncated_lines.push(line.substring(0, truncate_index+1));
+          
+          // The rest of the string may still be too long.
+          // Call ourselves recursively to split it up.
+          var rest_truncated_lines = SplitLongLines([ line.substring(truncate_index + 1) ], maxLen);
+          truncated_lines = truncated_lines.concat(rest_truncated_lines);
+        } else {
+          truncated_lines.push(line);
+        }
+      });
+    }
+    else {
+      truncated_lines.push(source_line);
+    }
+  });
+  
+  return truncated_lines;
+}
+
+// Shorten a string to less than maxLen characters without truncating words.
+function shorten(str, maxLen, separator = ' ') {
+  if (str.length <= maxLen) return str;
+  return str.substr(0, str.lastIndexOf(separator, maxLen));
+}

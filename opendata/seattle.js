@@ -3,7 +3,10 @@ var license = require("./licensehelper");
 
 module.exports = {
   GetCitationsByPlate: GetCitationsByPlate,
-  ProcessCitations: ProcessCitations,
+  //ProcessCitations: ProcessCitations,
+  ProcessCitationsForRequest: ProcessCitationsForRequest,
+  CitationIDNoPlateFound: noPlateFoundCitationNumber,
+  CitationIDNoCitationsFound: noCitationsFoundCitationNumber,
   GetVehicleIDs: GetVehicleIDs // TODO: Remove this from exports
 };
 
@@ -15,11 +18,18 @@ var fs = require("fs"),
   convert = require("xml-js"),
   soap = require("soap");
 
-var noCitations = "No citations found for plate # ";
-var parkingAndCameraViolationsText =
-  "Total parking and camera violations for #";
-var violationsByYearText = "Violations by year for #";
-var violationsByStatusText = "Violations by status for #";
+const MINIMUM_CITATION_ID = 0,
+  noPlateFoundCitationNumber = -1,
+  noCitationsFoundCitationNumber = -2;
+
+// Create a global client.
+// TODO: Is this a good idea? Or should I create a client for each call?
+
+const noCitationsFoundMessage = "No citations found for plate #",
+  noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",
+  parkingAndCameraViolationsText = "Total parking and camera violations for #",
+  violationsByYearText = "Violations by year for #",
+  violationsByStatusText = "Violations by status for #";
 
 var url =
   "https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl";
@@ -28,36 +38,40 @@ function GetCitationsByPlate(plate, state) {
   var vehicleNumPromises = [];
 
   return new Promise( (resolve, reject) => {
-    GetVehicleIDs(plate, state).then(function(vehicles) {
-
+    var citations = [];
+    console.log(`Getting vehicle IDs for ${license.formatPlate(plate, state)}.`);
+    GetVehicleIDs(plate, state).then(async function(vehicles) {
+      // Make the calls to GetCitationsByVehicleNum soap method synchronously
+      // Or we could get throttled by the server.
       for (var i = 0; i < vehicles.length; i++) {
         var vehicle = vehicles[i];
-
-        var vehicleNumPromise = GetCitationsByVehicleNum(vehicle.VehicleNumber);
-
-        vehicleNumPromises.push(vehicleNumPromise);
+        console.log(`About to call GetCitationsByVehicleNum soap method.`);
+        
+        citations.push( await GetCitationsByVehicleNum(vehicle.VehicleNumber) );
       }
-
+      
       //Now wait for each of the vehicle num promises to resolve
-      Promise.all(vehicleNumPromises).then( function (citations) {
+      //Promise.all(vehicleNumPromises).then( function (citations) {
+        console.log(`vehicleNumPromises resolved. Returned ${citations.length} citations.`);
+        
         // citations is an array of an array of citations, one for each vehicle id
         // collapse them into a hash based on 
         var citationsByCitationID = {};
         citations.forEach( (innerArray) => {
           innerArray.forEach( (citation) => {
+            console.log(`Citation: ${printCitation(citation)}.`);
+            
             citationsByCitationID[citation.Citation] = citation;
-          })
-        })
+          });
+        });
         
         // Now put the unique citations back to an array
         var allCitations = Object.keys(citationsByCitationID).map(function(v) { return citationsByCitationID[v]; });
 
         resolve(allCitations);
-      }).catch( function ( err ) {
-        // TODO: refactor error hanling out to a separete file.
-        console.log(`ERROR!!! ${err}.`);
-      });
     });
+    
+    console.log(`Returning promise from GetCitationsByPlate.`);
   });
 }
 
@@ -74,6 +88,9 @@ function GetVehicleIDs(plate, state) {
         throw err;
       }
       
+      // GetVehicleByPlate returns all vehicles with plates that
+      // start with the specified plate. So we have to filter the
+      // results.
       client.GetVehicleByPlate(args, function(err, result) {
         var vehicle_records = [];
         var jsonObj = JSON.parse(result.GetVehicleByPlateResult);
@@ -81,7 +98,13 @@ function GetVehicleIDs(plate, state) {
 
         for (var i = 0; i < jsonResultSet.length; i++) {
           var vehicle = jsonResultSet[i];
-          vehicle_records.push(vehicle);
+          
+          if (vehicle.Plate == plate) {
+            vehicle_records.push(vehicle);
+          }
+          else {
+            console.log(`Filtering out vehicle with plate ${state}:${vehicle.Plate}.`);
+          }
         }
         resolve(vehicle_records);
       });
@@ -93,15 +116,31 @@ function GetCitationsByVehicleNum(vehicleID) {
   var args = {
     VehicleNumber: vehicleID
   };
+  
+  console.log(`Getting citations for vehicle ID: ${vehicleID}.`);
+  
   return new Promise((resolve, reject) => {
     soap.createClient(url, function(err, client) {
+      console.log(`Soap client created for vehicle ID: ${vehicleID}`);
+      if (err) {
+        console.log(`ERROR!!!!: ${err}`);
+        throw err;
+      }
       client.GetCitationsByVehicleNumber(args, function(err, citations) {
+        console.log(`Promise for vehicleID ${vehicleID} completed.`);
+        if (err) {
+          console.log(`ERROR!!!!: ${err}`);
+          throw err;
+        }
         var jsonObj = JSON.parse(citations.GetCitationsByVehicleNumberResult);
         var jsonResultSet = JSON.parse(jsonObj.Data);
 
+        console.log(`Resolving promise in GetCitationsByVehicleNumber for vehicle ID: ${vehicleID}`);
         resolve(jsonResultSet);
       });
     });
+    
+    console.log(`Returning promise from GetCitationsByVehicleNumber for vehicle ID: ${vehicleID}.`);
   });
 }
 
@@ -121,16 +160,35 @@ function GetCasesByVehicleNum(vehicleID) {
   });
 }
 
-function ProcessCitations(citations) {
+// Process citations for one request
+function ProcessCitationsForRequest( citations ) {
   var general_summary, detailed_list, temporal_summary;
   var categorizedCitations = {};
   var chronologicalCitations = {};
   var violationsByYear = {};
   var violationsByStatus = {};
-
+  
   if (!citations || Object.keys(citations).length == 0) {
     // TODO: Write a dummy citation with the license?
     //general_summary = noCitations + license.formatPlate(plate, state);
+  } else if (citations.length == 1 && citations[0].Citation < MINIMUM_CITATION_ID) {
+    switch ( citations[0].Citation ) {
+      case noPlateFoundCitationNumber:
+        return [
+          `${noCitationsFoundMessage}${citations[0].license}.`
+        ];
+        break;
+        
+      case noCitationsFoundCitationNumber:
+        return [
+          `${noCitationsFoundMessage}${citations[0].license}`
+        ];
+        break
+        
+      default:
+        throw new Error(`ERROR: Unexpected citation ID: ${citations[0].Citation}.`);
+        break;
+    }
   } else {
     var license;
 
@@ -221,13 +279,23 @@ function ProcessCitations(citations) {
     }
   }
 
-  // return the groups of report items
-  var report_items = [
+  // Return them in the order they should be rendered.
+  var result = [
     general_summary,
     detailed_list,
     type_summary,
     temporal_summary
   ];
-
-  return report_items;
+  
+  console.log(`Returning:\n${result}.`);
+  
+  return result;
 }
+
+// Print out subset of citation object properties.
+function printCitation( citation ) {
+  return (
+    `Citation: ${citation.Citation}, Type: ${citation.Type}, Status: ${citation.Status}, Date: ${citation.ViolationDate}, Location: ${citation.ViolationLocation}.`
+  )
+}
+
