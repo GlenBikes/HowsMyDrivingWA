@@ -1,5 +1,9 @@
 /* Setting things up. */
 var license = require("./licensehelper");
+const MINIMUM_CITATION_ID = 0,
+  noPlateFoundCitationNumber = -1,
+  noCitationsFoundCitationNumber = -2;
+
 
 module.exports = {
   GetCitationsByPlate: GetCitationsByPlate,
@@ -17,10 +21,6 @@ var fs = require("fs"),
   app = express(),
   convert = require("xml-js"),
   soap = require("soap");
-
-const MINIMUM_CITATION_ID = 0,
-  noPlateFoundCitationNumber = -1,
-  noCitationsFoundCitationNumber = -2;
 
 // Create a global client.
 // TODO: Is this a good idea? Or should I create a client for each call?
@@ -192,7 +192,8 @@ function ProcessCitationsForRequest( citations ) {
   } else {
     var license;
 
-    for (var citation in citations) {
+    for (var i = 0; i < citations.length; i++) {
+      var citation = citations[i];
       var year = "Unknown";
       var violationDate = new Date(Date.now());
 
@@ -232,21 +233,21 @@ function ProcessCitationsForRequest( citations ) {
 
       violationsByYear[year]++;
     }
-
+    
     var general_summary =
       parkingAndCameraViolationsText +
       license +
       ": " +
       Object.keys(citations).length;
 
-    for (var key in Object.keys(categorizedCitations)) {
+    Object.keys(categorizedCitations).forEach( key => {
       var line = key + ": " + categorizedCitations[key];
 
       // Max twitter username is 15 characters, plus the @
       general_summary += "\n";
       general_summary += line;
-    }
-
+    });
+    
     var detailed_list = "";
 
     var sortedChronoCitationKeys = Object.keys(chronologicalCitations).sort(
@@ -254,29 +255,32 @@ function ProcessCitationsForRequest( citations ) {
         return new Date(a).getTime() - new Date(b).getTime();
       }
     );
+    
     var first = true;
 
-    for (var key in sortedChronoCitationKeys) {
-      for (var citation in chronologicalCitations[key]) {
+    for (var i = 0; i < sortedChronoCitationKeys.length; i++) {
+      var key = sortedChronoCitationKeys[i];
+
+      chronologicalCitations[key].forEach( citation => {
         if (first != true) {
           detailed_list += "\n";
         }
         first = false;
         detailed_list += `${citation.ViolationDate}, ${citation.Type}, ${citation.ViolationLocation}, ${citation.Status}`;
-      }
+      });
     }
 
     var temporal_summary = violationsByYearText + license + ":";
-    for (var key in Object.keys(violationsByYear)) {
+    Object.keys(violationsByYear).forEach( key => {
       temporal_summary += "\n";
       temporal_summary += `${key}: ${violationsByYear[key]}`;
-    }
-
+    });
+    
     var type_summary = violationsByStatusText + license + ":";
-    for (var key in Object.keys(violationsByStatus)) {
+    Object.keys(violationsByStatus).forEach( key => {
       type_summary += "\n";
       type_summary += `${key}: ${violationsByStatus[key]}`;
-    }
+    });
   }
 
   // Return them in the order they should be rendered.
