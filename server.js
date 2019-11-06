@@ -35,7 +35,12 @@ const MAX_RECORDS_BATCH = 2000,
   maxErrorFileLen = 100,
   lastDMFilename = "last_dm_id.txt",
   lastMentionFilename = "last_mention_id.txt",
-  errorFilename = "error.txt";
+  errorFilename = "error.txt",
+  tableNames = {
+    Request: `${process.env.DB_PREFIX}_Request`,
+    Citation: `${process.env.DB_PREFIX}_Citation`,
+    Report: `${process.env.DB_PREFIX}_ReportItems`
+  }
 
 console.log(`${process.env.TWITTER_HANDLE}: start`);
 
@@ -203,7 +208,7 @@ app.all("/tweet", function(request, response) {
 
             let params = {
               RequestItems: {
-                HMDWA_Request: request_records.slice(startPos, endPos)
+                [`${tableNames['Request']}`]: request_records.slice(startPos, endPos)
               }
             };
 
@@ -505,7 +510,7 @@ app.all("/processrequests", function(request, response) {
 
                 let params = {
                   RequestItems: {
-                    HMDWA_Citations: citation_records.slice(startPos, endPos)
+                    [`${tableNames['Citations']}`]: citation_records.slice(startPos, endPos)
                   }
                 };
 
@@ -531,7 +536,7 @@ app.all("/processrequests", function(request, response) {
               Promise.all(batchWritePromises)
                 .then(function(results) {
                   var params = {
-                    TableName: "HMDWA_Request",
+                    TableName: tableNames['Citations'],
                     Key: {
                       id: item.id
                     },
@@ -628,7 +633,7 @@ app.all("/processcitations", function(request, response) {
 
               let params = {
                 RequestItems: {
-                  HMDWA_Citations: citation_records.slice(startPos, endPos)
+                  [`${tableNames['Citations']}`]: citation_records.slice(startPos, endPos)
                 }
               };
 
@@ -742,7 +747,7 @@ app.all("/processreportitems", function(request, response) {
 
                 let params = {
                   RequestItems: {
-                    HMDWA_ReportItems: report_item_records.slice(
+                    [`${tableNames['ReportItems']}`]: report_item_records.slice(
                       startPos,
                       endPos
                     )
@@ -1130,7 +1135,7 @@ function GetRequestRecords() {
 
   // Query unprocessed requests
   var params = {
-    TableName: "HMDWA_Request",
+    TableName: tableNames['Request'],
     IndexName: "processing_status-index",
     Select: "ALL_ATTRIBUTES",
     KeyConditionExpression: "#processing_status = :pkey",
@@ -1167,7 +1172,7 @@ function GetCitationRecords() {
 
   // Query unprocessed requests
   var params = {
-    TableName: "HMDWA_Citations",
+    TableName: tableNames['Citations'],
     IndexName: "processing_status-index",
     Select: "ALL_ATTRIBUTES",
 
@@ -1250,7 +1255,7 @@ function GetReportItemRecords() {
 
   // Query unprocessed requests
   var params = {
-    TableName: "HMDWA_ReportItems",
+    TableName: tableNames['ReportItems'],
     IndexName: "processing_status-index",
     Select: "ALL_ATTRIBUTES",
 
@@ -1376,7 +1381,7 @@ function WriteReportItemRecords(request_id, citation, report_items) {
 
     let params = {
       RequestItems: {
-        HMDWA_ReportItems: report_item_records.slice(startPos, endPos)
+        [`${tableNames['ReportItems']}`]: report_item_records.slice(startPos, endPos)
       }
     };
 
