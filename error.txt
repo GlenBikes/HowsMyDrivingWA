@@ -1,100 +1,100 @@
-============================== 2019-10-19 04:12:42 =========================================
-Error: No license found in tweet: undefined
-Error: Error: No license found in tweet: undefined
-    at parseTweet (/app/server.js:293:17)
-    at parseTweet (/app/server.js:128:47)
-    at Array.forEach (<anonymous>)
-    at forEach (/app/server.js:109:23)
-    at /rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:127:13
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:352:5)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-============================== 2019-10-19 04:03:10 =========================================
-No status found with that ID.
-Error: No status found with that ID.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-10-19 02:24:09 =========================================
+============================== 2019-11-6 00:42:04 =========================================
 Status is a duplicate.
 Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
     at emitOne (events.js:121:20)
     at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
     at Object.onceWrapper (events.js:313:30)
     at emitNone (events.js:111:20)
     at Gunzip.emit (events.js:208:7)
-============================== 2019-10-19 02:22:18 =========================================
+============================== 2019-11-6 00:37:03 =========================================
 Status is a duplicate.
 Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
     at emitOne (events.js:121:20)
     at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
     at Object.onceWrapper (events.js:313:30)
     at emitNone (events.js:111:20)
     at Gunzip.emit (events.js:208:7)
-============================== 2019-10-19 02:20:37 =========================================
+============================== 2019-11-6 00:31:59 =========================================
 Status is a duplicate.
 Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
     at emitOne (events.js:121:20)
     at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
     at Object.onceWrapper (events.js:313:30)
     at emitNone (events.js:111:20)
     at Gunzip.emit (events.js:208:7)
-============================== 2019-10-18 06:17:23 =========================================
-No status found with that ID.
-Error: No status found with that ID.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+============================== 2019-11-6 00:25:58 =========================================
+Status is a duplicate.
+Error: Status is a duplicate.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
     at emitOne (events.js:121:20)
     at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
     at Object.onceWrapper (events.js:313:30)
     at emitNone (events.js:111:20)
     at Gunzip.emit (events.js:208:7)
-============================== 2019-10-18 04:50:29 =========================================
-Error: id is required for /dumptweet
-Error: Error: id is required for /dumptweet
-    at /app/server.js:273:17
-    at Layer.handle [as handle_request] (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/layer.js:95:5)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:137:13)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
-    at next (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/express/4.17.1/node_modules/express/lib/router/route.js:131:14)
-============================== 2019-10-17 03:27:29 =========================================
-User is over daily status update limit.
-Error: User is over daily status update limit.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/twitter.js:364:7)
+============================== 2019-11-6 00:20:58 =========================================
+Status is a duplicate.
+Error: Status is a duplicate.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
     at emitOne (events.js:121:20)
     at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/request/2.88.0/node_modules/request/request.js:1083:12)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
     at Object.onceWrapper (events.js:313:30)
     at emitNone (events.js:111:20)
     at Gunzip.emit (events.js:208:7)
-============================== 2019-10-17 00:26:53 =========================================
-No status found with that ID.
-Error: No status found with that ID.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/3765d589-1120-4ac4-8e42-aa47893ab034/node_modules/.registry.npmjs.org/twit/2.2.11/node_modules/twit/lib/helpers.js:74:13)
+============================== 2019-11-6 00:15:58 =========================================
+Status is a duplicate.
+Error: Status is a duplicate.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-11-6 00:10:58 =========================================
+Status is a duplicate.
+Error: Status is a duplicate.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-11-6 00:05:59 =========================================
+Status is a duplicate.
+Error: Status is a duplicate.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
+    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
+    at emitOne (events.js:121:20)
+    at Request.emit (events.js:211:7)
+    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at Gunzip.emit (events.js:208:7)
+============================== 2019-11-6 00:00:58 =========================================
+Status is a duplicate.
+Error: Status is a duplicate.
+    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
