@@ -38,8 +38,8 @@ const MAX_RECORDS_BATCH = 2000,
   errorFilename = "error.txt",
   tableNames = {
     Request: `${process.env.DB_PREFIX}_Request`,
-    Citation: `${process.env.DB_PREFIX}_Citation`,
-    Report: `${process.env.DB_PREFIX}_ReportItems`
+    Citations: `${process.env.DB_PREFIX}_Citations`,
+    ReportItems: `${process.env.DB_PREFIX}_ReportItems`
   }
 
 console.log(`${process.env.TWITTER_HANDLE}: start`);
@@ -536,7 +536,7 @@ app.all("/processrequests", function(request, response) {
               Promise.all(batchWritePromises)
                 .then(function(results) {
                   var params = {
-                    TableName: tableNames['Citations'],
+                    TableName: tableNames['Request'],
                     Key: {
                       id: item.id
                     },
@@ -1170,7 +1170,7 @@ function GetCitationRecords() {
   var docClient = new AWS.DynamoDB.DocumentClient();
   var citation_records = [];
 
-  // Query unprocessed requests
+  // Query unprocessed citations
   var params = {
     TableName: tableNames['Citations'],
     IndexName: "processing_status-index",
@@ -1253,7 +1253,7 @@ function GetReportItemRecords() {
 
   var report_item_records = [];
 
-  // Query unprocessed requests
+  // Query unprocessed report items
   var params = {
     TableName: tableNames['ReportItems'],
     IndexName: "processing_status-index",
