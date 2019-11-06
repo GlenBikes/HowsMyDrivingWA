@@ -80,7 +80,7 @@ AWS.config.getCredentials(function(err) {
   }
 });
 */
-var maxTweetLength = 280; // TODO: Shorten this to account for the replying-to user account so we don't have calculations scattered all over the place
+var maxTweetLength = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
 var tweets = [];
 var noCitations = "No citations found for plate # ";
 var parkingAndCameraViolationsText =
