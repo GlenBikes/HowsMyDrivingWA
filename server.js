@@ -30,6 +30,7 @@ var AWS = require("aws-sdk"),
   T = new Twit(config.twitter);
 
 const MAX_RECORDS_BATCH = 2000,
+  INTER_TWEET_DELAY_MS = (process.env.hasOwnProperty("INTER_TWEET_DELAY_MS") && process.env.INTER_TWEET_DELAY_MS > 0) ? process.env.INTER_TWEET_DELAY_MS : 1000,
   maxIdFileLen = 100,
   maxErrorFileLen = 100,
   lastDMFilename = "last_dm_id.txt",
@@ -39,6 +40,7 @@ const MAX_RECORDS_BATCH = 2000,
 console.log(`${process.env.TWITTER_HANDLE}: start`);
 
 AWS.config.update({ region: "us-east-2" });
+
 
 /*
 console.log(`***Getting vehicle IDs for WA:334XYB.`);
@@ -103,8 +105,6 @@ T.get("account/verify_credentials", {}, function(err, data, response) {
   }
   app_id = data.id;
 });
-
-var myTokens = ":".split(":");
 
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request, response) {
@@ -902,7 +902,7 @@ function SendResponses(origTweet, report_items) {
           // can cause Twitter to think you're a troll bot or something and then some
           // of the tweets will not display for users other than the bot account.
           // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-          sleep(500).then(() => {
+          sleep(INTER_TWEET_DELAY_MS).then(() => {
             // Send the rest of the responses. When those are sent, then resolve
             // the local Promise.
             SendResponses(data, report_items_clone)
