@@ -89,6 +89,8 @@ module.exports.StatesAndProvinces = [
     return license.toUpperCase().replace(':', '_');
   }
 
+var _verbose = process.env.VERBOSE;
+
 /**
  * When investigating a selenium test failure on a remote headless browser that couldn't be reproduced
  * locally, I wanted to add some javascript to the site under test that would dump some state to the

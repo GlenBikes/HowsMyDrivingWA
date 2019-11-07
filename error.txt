@@ -1,100 +1,100 @@
-============================== 2019-11-6 00:42:04 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:37:03 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:31:59 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:25:58 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:20:58 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:15:58 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:10:58 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:05:59 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
-    at onRequestComplete (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:344:25)
-    at Request.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/twitter.js:364:7)
-    at emitOne (events.js:121:20)
-    at Request.emit (events.js:211:7)
-    at Gunzip.<anonymous> (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/node_modules/request/request.js:1083:12)
-    at Object.onceWrapper (events.js:313:30)
-    at emitNone (events.js:111:20)
-    at Gunzip.emit (events.js:208:7)
-============================== 2019-11-6 00:00:58 =========================================
-Status is a duplicate.
-Error: Status is a duplicate.
-    at Object.exports.makeTwitError (/rbd/pnpm-volume/34179cb3-0936-4af9-b315-83da8f669257/node_modules/twit/lib/helpers.js:74:13)
+============================== 2019-11-7 20:24:43 =========================================
+Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
+Error: Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+============================== 2019-11-7 20:23:20 =========================================
+Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
+Error: Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+============================== 2019-11-7 20:21:52 =========================================
+Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
+Error: Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+============================== 2019-11-7 20:21:11 =========================================
+Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
+Error: Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+============================== 2019-11-7 20:20:52 =========================================
+Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD
+ flowchart cause we've had worse than this go through 
+@HMDWATest 
+.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
