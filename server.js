@@ -116,7 +116,7 @@ app.all("/tweet", function(request, response) {
             if (maxTweetIdRead < status.id_str) {
               maxTweetIdRead = status.id_str;
             }
-
+            
             /*
             Make sure this isn't a reply to one of the bot's tweets which would
             include the bot screen name in full_text, but only due to replies.
@@ -870,7 +870,7 @@ function parseTweet(text) {
   const matches = licenseRegExp.exec(text);
 
   if (matches == null || matches.length < 2 || matches[1] == "XX") {
-    handleError(new Error(`Error: No license found in tweet: ${text}`));
+    console.log(`No license found in tweet: ${text}`);
   } else {
     state = matches[1];
     plate = matches[2];
