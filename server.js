@@ -46,40 +46,6 @@ console.log(`${process.env.TWITTER_HANDLE}: start`);
 
 AWS.config.update({ region: "us-east-2" });
 
-
-/*
-console.log(`***Getting vehicle IDs for WA:334XYB.`);
-seattle.GetVehicleIDs('334XYB', 'WA').then( function ( vehicleNums ) {
-  console.log(`***Got ${vehicleNums.length} vehicles for WA:334XYB.`)
-});
-console.log(`***After getting vehicle IDs for WA:334XYB.`);
-
-console.log(`***Getting citations for WA:334XYB.`);
-seattle.GetCitationsByPlate('334XYB', 'WA').then( function ( citations ) {
-  console.log(`***Got ${citations.length} citations for WA:334XYB.`)
-});
-console.log(`***After getting citations for WA:334XYB.`);
-*/
-
-/*
-logTweetById("1185765762973065217");
-logTweetById("1184633777714335746");
-logTweetById("1184651910126530560");
-*/
-
-/*
-AWS.config.getCredentials(function(err) {
-  if (err) {
-    console.log(err);
-    console.log(err.stack);
-  // credentials not loaded
-  }
-  else {
-    console.log("Access key:", AWS.config.credentials.accessKeyId);
-    console.log("Secret access key:", AWS.config.credentials.secretAccessKey);
-  }
-});
-*/
 var maxTweetLength = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
 var tweets = [];
 var noCitations = "No citations found for plate # ";
@@ -115,7 +81,6 @@ T.get("account/verify_credentials", {}, function(err, data, response) {
 app.all("/tweet", function(request, response) {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
-  /* Respond to @ mentions */
   /* First, let's load the ID of the last tweet we responded to. */
   var last_mention_id = getLastMentionId();
   if (last_mention_id != undefined) {
@@ -403,6 +368,7 @@ app.all("/errors", function(request, response) {
   response.sendFile(fileName);
 });
 
+// uptimerobot.com hits this every 5 minutes
 app.all("/processrequests", function(request, response) {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
@@ -425,20 +391,21 @@ app.all("/processrequests", function(request, response) {
               `Not a valid state/plate in this request (${state}/${plate}).`
             );
             // There was no valid plate found in the tweet. Add a dummy citation.
-            var citation = new Object();
             var now = new Date().valueOf();
-            (citation.id = uuidv1()),
-              (citation.Citation = seattle.CitationIDNoCitationsFound);
-            citation.request_id = item.id;
-            citation.license = item.license;
-            (citation.created = now),
-              (citation.updated = now),
-              (citation.tweet_id = item.tweet_id);
-            citation.tweet_id_str = item.tweet_id_str;
-            citation.tweet_user_id = item.tweet_user_id;
-            citation.tweet_user_id_str = item.tweet_user_id_str;
-            citation.tweet_user_screen_name = item.tweet_user_screen_name;
-            citation.processing_status = "UNPROCESSED";
+            var citation = {
+              id: uuidv1(),
+              Citation: seattle.CitationIDNoCitationsFound,
+              request_id: item.id,
+              license: item.license,
+              created: now,
+              modified: now,
+              tweet_id: item.tweet_id,
+              tweet_id_str: item.tweet_id_str,
+              tweet_user_id: item.tweet_user_id,
+              tweet_user_id_str: item.tweet_user_id_str,
+              tweet_user_screen_name: item.tweet_user_screen_name,
+              processing_status: "UNPROCESSED"
+            };
 
             citation_records.push({
               PutRequest: {
@@ -448,21 +415,24 @@ app.all("/processrequests", function(request, response) {
           } else {
             seattle.GetCitationsByPlate(plate, state).then(function(citations) {
               if (!citations || citations.length == 0) {
-                var citation = new Object();
                 var now = new Date().valueOf();
-                citation.id = uuidv1();
-                citation.Citation = seattle.CitationIDNoPlateFound;
-                citation.request_id = item.id;
-                citation.license = item.license;
-                citation.created = now;
-                citation.updated = now;
-                citation.tweet_id = item.tweet_id;
-                citation.tweet_id_str = item.tweet_id_str;
-                citation.tweet_user_id = item.tweet_user_id;
-                citation.tweet_user_id_str = item.tweet_user_id_str;
-                citation.tweet_user_screen_name = item.tweet_user_screen_name;
-                citation.processing_status = "UNPROCESSED";
+                var citation = {
+                  id: uuidv1(),
+                  Citation: seattle.CitationIDNoPlateFound,
+                  request_id: item.id,
+                  license: item.license,
+                  created: now,
+                  modified: now,
+                  tweet_id: item.tweet_id,
+                  tweet_id_str: item.tweet_id_str,
+                  tweet_user_id: item.tweet_user_id,
+                  tweet_user_id_str: item.tweet_user_id_str,
+                  tweet_user_screen_name: item.tweet_user_screen_name,
+                  processing_status: "UNPROCESSED"
+                }
 
+                // DynamoDB does not allow any property to be null or empty string.
+                // Set these values to 'None'.
                 mungeCitation(citation);
 
                 citation_records.push({
@@ -474,19 +444,20 @@ app.all("/processrequests", function(request, response) {
                 citations.forEach(citation => {
                   var now = new Date().valueOf();
 
-                  // Add the primary and sort keys
-                  (citation.id = uuidv1()),
-                    (citation.created = now),
-                    (citation.modified = now),
-                    (citation.request_id = item.id);
+                  citation.id = uuidv1();
+                  citation.request_id = item.id;
+                  citation.processing_status = "UNPROCESSED";
                   citation.license = item.license;
+                  citation.created = now;
+                  citation.modified = now;
                   citation.tweet_id = item.tweet_id;
                   citation.tweet_id_str = item.tweet_id_str;
                   citation.tweet_user_id = item.tweet_user_id;
                   citation.tweet_user_id_str = item.tweet_user_id_str;
                   citation.tweet_user_screen_name = item.tweet_user_screen_name;
-                  citation.processing_status = "UNPROCESSED";
 
+                  // DynamoDB does not allow any property to be null or empty string.
+                  // Set these values to 'None'.
                   mungeCitation(citation);
 
                   citation_records.push({
@@ -863,7 +834,6 @@ function mungeCitation(citation) {
     ViolationLocation: "None"
   };
 
-  //Object.keys(columns).forEach(function(key) {
   for (var columnName in columns) {
     if (citation.hasOwnProperty(columnName)) {
       if (citation[columnName] == null || citation[columnName] == "") {
@@ -986,8 +956,8 @@ function getLastIdFromFile(filename) {
     let line;
 
     while ((line = liner.next())) {
-      /* strip off the date if present, it's only used for debugging. */
-      /* First, let's load the ID of the last tweet we responded to. */
+      // strip off the date if present, it's only used for debugging.
+      // First, let's load the ID of the last tweet we responded to.
       const matches = lastIdRegExp.exec(line);
       if (matches == null || matches.length < 1) {
         handleError(new Error(`Error: No last mention found: ${line}`));
@@ -1402,16 +1372,30 @@ function WriteReportItemRecords(request_id, citation, report_items) {
   }
 
   // 4. Wait for all the report item writes to complete.
-
   return Promise.all(batchWritePromises);
 }
 
+/*
+ * Split array of strings to ensure each string is <= maxLen
+ *
+ * Params:
+ *   source_lines: array of strings (each one may be multi-line)
+ *   maxLen:       maximum length for each element in source_lines
+ * Returns:
+ *   array of strings matching source_lines but with any elements longer
+ *   than maxLen, broken up into multiple entries, breaking on in order:
+ *   - newlines (trailing newlines on broken elements are removed)
+ *   - word breaks
+ *   - if neither above exist, then just split at maxLen characters
+ *
+ * Note: elements in source_lines are not joined if < maxLen, only broken
+ *       up if > maxLen
+**/
 function SplitLongLines(source_lines, maxLen) {
   var truncated_lines = [];
   
   var index = 0;
   source_lines.forEach(source_line => {
-    // Break up long lines into lines < maxLen characters.
     if (source_line.length > maxLen) {
       // break it up into lines to start with
       var chopped_lines = source_line.split("\n");
@@ -1426,7 +1410,8 @@ function SplitLongLines(source_lines, maxLen) {
             current_line = '';
             first_line = true;
           }
-          // word break it into multiple report_items.
+          
+          // word break it into multiple items
           var truncate_index = maxLen - 1;
 
           // Go back until we hit a whitespace characater
@@ -1474,10 +1459,4 @@ function SplitLongLines(source_lines, maxLen) {
   });
 
   return truncated_lines;
-}
-
-// Shorten a string to less than maxLen characters without truncating words.
-function shorten(str, maxLen, separator = " ") {
-  if (str.length <= maxLen) return str;
-  return str.substr(0, str.lastIndexOf(separator, maxLen));
 }
