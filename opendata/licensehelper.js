@@ -1,4 +1,4 @@
-/* Setting things up. */
+/* Exported functions. */
 module.exports = {
   formatPlate: formatPlate,
   printObject: printObject
@@ -79,11 +79,15 @@ module.exports.StatesAndProvinces = [
   "YT"
 ];
 
-
-
-function formatPlate(plate, state) {
-  return state.toUpperCase() + "-" + plate.toUpperCase();
-}
+/**
+ * When displaying a license we should not use XX:nnnnn especially since when
+ * putting a # in front, it means all our tweets will show up in "yay state XX" hashtag queries.
+ * Also it protects from someone copying/pasting or retweeting or something and having the bot
+ * detect it as another request.
+**/
+  function formatPlate(license) {
+    return license.toUpperCase().replace(':', '_');
+  }
 
 /**
  * When investigating a selenium test failure on a remote headless browser that couldn't be reproduced
@@ -94,7 +98,7 @@ function formatPlate(plate, state) {
  * the internal state of the object instead.
  *
  * So, this is a rough and ready function that recursively dumps any old javascript object.
- */
+**/
 function printObject(o, indent) {
   var out = "";
   if (typeof indent === "undefined") {
