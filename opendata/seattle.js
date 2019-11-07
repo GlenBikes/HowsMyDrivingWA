@@ -1,4 +1,3 @@
-var licenseHelper = require("./licensehelper");
 const MINIMUM_CITATION_ID = 0,
   noPlateFoundCitationNumber = -1,
   noCitationsFoundCitationNumber = -2;
@@ -13,12 +12,14 @@ module.exports = {
 };
 
 // modules
-var fs = require("fs"),
-  path = require("path"),
-  express = require("express"),
-  app = express(),
-  convert = require("xml-js"),
-  soap = require("soap");
+var convert = require("xml-js"),
+    express = require("express"),
+    fs = require("fs"),
+    licenseHelper = require("./licensehelper"),
+    path = require("path"),
+    soap = require("soap");
+
+var app = express();
 
 const noCitationsFoundMessage = "No citations found for plate #",
   noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",

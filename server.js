@@ -1,7 +1,6 @@
 // Exported functions for tests
 module.exports = {
   _chompTweet: chompTweet,
-  _parseTweet: parseTweet,
   _splitLines: SplitLongLines
 };
 
@@ -131,7 +130,7 @@ app.all("/tweet", function(request, response) {
               } else if (status.user.id == app_id) {
                 console.log("Ignoring our own tweet: " + status.full_text);
               } else {
-                const { state, plate, verbose } = parseTweet(chomped_text);
+                const { state, plate } = parseTweet(chomped_text);
                 var now = new Date().valueOf();
                 var item = {
                   PutRequest: {
@@ -375,7 +374,6 @@ app.all("/processrequests", function(request, response) {
   GetRequestRecords()
     .then(request_records => {
       if (request_records && request_records.length > 0) {
-        debugger;
         request_records.forEach(function(item) {
           var citation_records = [];
           var tokens = item.license.split(":");
@@ -606,7 +604,7 @@ app.all("/processrequests", function(request, response) {
               
             });
           }
-        })
+        });
       } else {
         console.log("No request records found.");
       }
@@ -884,8 +882,7 @@ function parseTweet(text) {
 
   return {
     state: state ? state.toUpperCase() : '',
-    plate: plate ? plate.toUpperCase() : '',
-    verbose: verbose
+    plate: plate ? plate.toUpperCase() : ''
   };
 }
 
