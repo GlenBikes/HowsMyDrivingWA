@@ -1,3 +1,4 @@
+var licenseHelper = require("./licensehelper");
 const MINIMUM_CITATION_ID = 0,
   noPlateFoundCitationNumber = -1,
   noCitationsFoundCitationNumber = -2;
@@ -17,8 +18,7 @@ var fs = require("fs"),
   express = require("express"),
   app = express(),
   convert = require("xml-js"),
-  soap = require("soap"),
-  licenseHelper = require("./licensehelper");
+  soap = require("soap");
 
 const noCitationsFoundMessage = "No citations found for plate #",
   noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",
@@ -152,7 +152,7 @@ function ProcessCitationsForRequest( citations ) {
     switch ( citations[0].Citation ) {
       case noPlateFoundCitationNumber:
         return [
-          `${noCitationsFoundMessage}${licenseHelper.formatPlate(citations[0].license)}.`
+          noValidPlate
         ];
         break;
         

@@ -375,6 +375,7 @@ app.all("/processrequests", function(request, response) {
   GetRequestRecords()
     .then(request_records => {
       if (request_records && request_records.length > 0) {
+        debugger;
         request_records.forEach(function(item) {
           var citation_records = [];
           var tokens = item.license.split(":");
@@ -394,7 +395,7 @@ app.all("/processrequests", function(request, response) {
             var now = new Date().valueOf();
             var citation = {
               id: uuidv1(),
-              Citation: seattle.CitationIDNoCitationsFound,
+              Citation: seattle.CitationIDNoPlateFound,
               request_id: item.id,
               license: item.license,
               created: now,
@@ -412,13 +413,81 @@ app.all("/processrequests", function(request, response) {
                 Item: citation
               }
             });
+            
+            
+            // Write the citations to DB
+            // DynamoDB batchWrite only supports up to 25 items
+            var startPos = 0;
+            var endPos;
+            var batchWritePromises = [];
+            while (startPos < citation_records.length) {
+              endPos = startPos + 25;
+              if (endPos > citation_records.length) {
+                endPos = citation_records.length;
+              }
+
+              let params = {
+                RequestItems: {
+                  [`${tableNames['Citations']}`]: citation_records.slice(startPos, endPos)
+                }
+              };
+
+              var batchWritePromise = new Promise((resolve, reject) => {
+                docClient.batchWrite(params, function(err, data) {
+                  if (err) {
+                    handleError(err);
+                  }
+
+                  // TODO: Handle data.UnprocessedItems
+                  resolve(data);
+                });
+              });
+
+              batchWritePromises.push(batchWritePromise);
+
+              startPos = endPos;
+            }
+
+            // Wait for all the citation writes to complete to
+            // ensure we don't update the request in the case
+            // where one or more of these writes failed.
+            Promise.all(batchWritePromises)
+              .then(function(results) {
+                var params = {
+                  TableName: tableNames['Request'],
+                  Key: {
+                    id: item.id
+                  },
+                  AttributeUpdates: {
+                    processing_status: {
+                      Action: "PUT",
+                      Value: "PROCESSED"
+                    },
+                    modified: {
+                      Action: "PUT",
+                      Value: new Date().valueOf()
+                    }
+                  }
+                };
+
+                docClient.update(params, function(err, data) {
+                  if (err) {
+                    handleError(err);
+                  }
+                });
+              })
+              .catch(function(e) {
+                handleError(e);
+              });
+
+          
           } else {
             seattle.GetCitationsByPlate(plate, state).then(function(citations) {
               if (!citations || citations.length == 0) {
                 var now = new Date().valueOf();
                 var citation = {
                   id: uuidv1(),
-                  Citation: seattle.CitationIDNoPlateFound,
+                  Citation: seattle.CitationIDNoCitationsFound,
                   request_id: item.id,
                   license: item.license,
                   created: now,
@@ -467,7 +536,8 @@ app.all("/processrequests", function(request, response) {
                   });
                 });
               }
-
+              
+              
               // Write the citations to DB
               // DynamoDB batchWrite only supports up to 25 items
               var startPos = 0;
@@ -532,9 +602,11 @@ app.all("/processrequests", function(request, response) {
                 .catch(function(e) {
                   handleError(e);
                 });
+              
+              
             });
           }
-        });
+        })
       } else {
         console.log("No request records found.");
       }
@@ -811,8 +883,8 @@ function parseTweet(text) {
   }
 
   return {
-    state: state.toUpperCase(),
-    plate: plate.toUpperCase(),
+    state: state ? state.toUpperCase() : '',
+    plate: plate ? plate.toUpperCase() : '',
     verbose: verbose
   };
 }
