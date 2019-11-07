@@ -1,3 +1,32 @@
+============================== 2019-11-7 22:25:42 =========================================
+socket hang up
+Error: socket hang up
+    at TLSSocket.onHangUp (_tls_wrap.js:1148:19)
+    at Object.onceWrapper (events.js:313:30)
+    at emitNone (events.js:111:20)
+    at TLSSocket.emit (events.js:208:7)
+    at endReadableNT (_stream_readable.js:1064:12)
+    at _combinedTickCallback (internal/process/next_tick.js:139:11)
+    at process._tickDomainCallback (internal/process/next_tick.js:219:9)
+============================== 2019-11-7 22:12:11 =========================================
+Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD flowchart cause we've had worse than this go through @HMDWATest.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
+Error: Error: No license found in tweet: That's all it takes to get booted? I want to see the 
+@SeattlePD flowchart cause we've had worse than this go through @HMDWATest.
+
+If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
+    boot now 
+} else { 
+    fall through to the documented process 
+}
+    at parseTweet (/app/server.js:873:17)
+    at forEach (/app/server.js:133:42)
 ============================== 2019-11-7 20:24:43 =========================================
 Error: No license found in tweet: That's all it takes to get booted? I want to see the 
 @SeattlePD
@@ -69,32 +98,3 @@ Error: No license found in tweet: That's all it takes to get booted? I want to s
 @SeattlePD
  flowchart cause we've had worse than this go through 
 @HMDWATest 
-.
-
-If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
-    boot now 
-} else { 
-    fall through to the documented process 
-}
-Error: Error: No license found in tweet: That's all it takes to get booted? I want to see the 
-@SeattlePD
- flowchart cause we've had worse than this go through 
-@HMDWATest 
-.
-
-If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
-    boot now 
-} else { 
-    fall through to the documented process 
-============================== 2019-11-7 20:20:52 =========================================
-Error: No license found in tweet: That's all it takes to get booted? I want to see the 
-@SeattlePD
- flowchart cause we've had worse than this go through 
-@HMDWATest 
-.
-
-If (car belongs to SPD officer's ex-girlfriend's current boy/girlfriend) {
-    boot now 
-} else { 
-    fall through to the documented process 
-}
