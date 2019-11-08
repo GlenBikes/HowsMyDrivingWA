@@ -1,6 +1,7 @@
 const MINIMUM_CITATION_ID = 0,
   noPlateFoundCitationNumber = -1,
-  noCitationsFoundCitationNumber = -2;
+  noCitationsFoundCitationNumber = -2,
+  CitationLicenseQueryCount = -3;
 
 // Exported functions that unit tests need.
 module.exports = {
@@ -8,7 +9,8 @@ module.exports = {
   ProcessCitationsForRequest: ProcessCitationsForRequest,
   // TODO: Move these to a library that jurisdictions can require.
   CitationIDNoPlateFound: noPlateFoundCitationNumber,
-  CitationIDNoCitationsFound: noCitationsFoundCitationNumber
+  CitationIDNoCitationsFound: noCitationsFoundCitationNumber,
+  CitationLicenseQueryCount: CitationLicenseQueryCount
 };
 
 // modules
