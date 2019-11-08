@@ -55,7 +55,7 @@ var violationsByStatusText = "Violations by status for #";
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
 var botScreenNameRegexp = new RegExp(
   "@" + process.env.TWITTER_HANDLE + "\\b",
-  "ig"
+  "i"
 );
 
 app.use(express.static("public"));
@@ -122,6 +122,8 @@ app.all("/tweet", function(request, response) {
             include the bot screen name in full_text, but only due to replies.
             */
             const { chomped, chomped_text } = chompTweet(status);
+            
+            debugger;
 
             if (!chomped || botScreenNameRegexp.test(chomped_text)) {
               /* Don't reply to retweet or our own tweets. */
@@ -861,12 +863,6 @@ function chompTweet(tweet) {
 function parseTweet(text) {
   var state;
   var plate;
-  var verbose = false;
-
-  if (/verbose/i.test(text)) {
-    verbose = true;
-  }
-
   const matches = licenseRegExp.exec(text);
 
   if (matches == null || matches.length < 2 || matches[1] == "XX") {
