@@ -53,7 +53,7 @@ var parkingAndCameraViolationsText =
   "Total parking and camera violations for #";
 var violationsByYearText = "Violations by year for #";
 var violationsByStatusText = "Violations by status for #";
-var licenseQueriedCountText = "Liceense __LICENSE__ has been queried __COUNT__ times.";
+var licenseQueriedCountText = "License __LICENSE__ has been queried __COUNT__ times.";
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
 var botScreenNameRegexp = new RegExp(
   "@" + process.env.TWITTER_HANDLE + "\\b",
@@ -485,11 +485,14 @@ app.all("/processrequests", function(request, response) {
 
           
           } else {
-            var queryCountPromise = GetQueryCount(plate, state)
+            debugger;
+            var queryCountPromise = GetQueryCount(plate, state);
 
             seattle.GetCitationsByPlate(plate, state).then(function(citations) {
+              debugger;
               // Also wait for the query count promise to resolve.
               queryCountPromise.then( (querycount) => {
+                debugger;
                 // Create the query count citation
                 var now = new Date().valueOf();
                 var queryCountCitation = {
@@ -497,7 +500,7 @@ app.all("/processrequests", function(request, response) {
                     Citation: seattle.CitationLicenseQueryCount,
                     request_id: item.id,
                     processing_status: "UNPROCESSED",
-                    query_count_text: licenseQueriedCountText.replace('__LICENSE__', license.formatPlate(`${state}:${plate}`)).replace('__COUNT__', querycount),
+                    query_count: querycount,
                     license: item.license,
                     created: now,
                     modified: now,
@@ -570,75 +573,74 @@ app.all("/processrequests", function(request, response) {
                     });
                   });
                 }
-              });
               
               
-              // Write the citations to DB
-              // DynamoDB batchWrite only supports up to 25 items
-              var startPos = 0;
-              var endPos;
-              var batchWritePromises = [];
-              while (startPos < citation_records.length) {
-                endPos = startPos + 25;
-                if (endPos > citation_records.length) {
-                  endPos = citation_records.length;
-                }
-
-                let params = {
-                  RequestItems: {
-                    [`${tableNames['Citations']}`]: citation_records.slice(startPos, endPos)
+                // Write the citations to DB
+                // DynamoDB batchWrite only supports up to 25 items
+                var startPos = 0;
+                var endPos;
+                var batchWritePromises = [];
+                while (startPos < citation_records.length) {
+                  endPos = startPos + 25;
+                  if (endPos > citation_records.length) {
+                    endPos = citation_records.length;
                   }
-                };
 
-                var batchWritePromise = new Promise((resolve, reject) => {
-                  docClient.batchWrite(params, function(err, data) {
-                    if (err) {
-                      handleError(err);
-                    }
-
-                    // TODO: Handle data.UnprocessedItems
-                    resolve(data);
-                  });
-                });
-
-                batchWritePromises.push(batchWritePromise);
-
-                startPos = endPos;
-              }
-
-              // Wait for all the citation writes to complete to
-              // ensure we don't update the request in the case
-              // where one or more of these writes failed.
-              Promise.all(batchWritePromises)
-                .then(function(results) {
-                  var params = {
-                    TableName: tableNames['Request'],
-                    Key: {
-                      id: item.id
-                    },
-                    AttributeUpdates: {
-                      processing_status: {
-                        Action: "PUT",
-                        Value: "PROCESSED"
-                      },
-                      modified: {
-                        Action: "PUT",
-                        Value: new Date().valueOf()
-                      }
+                  let params = {
+                    RequestItems: {
+                      [`${tableNames['Citations']}`]: citation_records.slice(startPos, endPos)
                     }
                   };
 
-                  docClient.update(params, function(err, data) {
-                    if (err) {
-                      handleError(err);
-                    }
+                  var batchWritePromise = new Promise((resolve, reject) => {
+                    docClient.batchWrite(params, function(err, data) {
+                      if (err) {
+                        handleError(err);
+                      }
+
+                      // TODO: Handle data.UnprocessedItems
+                      resolve(data);
+                    });
                   });
-                })
-                .catch(function(e) {
-                  handleError(e);
-                });
-              
-              
+
+                  batchWritePromises.push(batchWritePromise);
+
+                  startPos = endPos;
+                }
+
+                // Wait for all the citation writes to complete to
+                // ensure we don't update the request in the case
+                // where one or more of these writes failed.
+                Promise.all(batchWritePromises)
+                  .then(function(results) {
+                    var params = {
+                      TableName: tableNames['Request'],
+                      Key: {
+                        id: item.id
+                      },
+                      AttributeUpdates: {
+                        processing_status: {
+                          Action: "PUT",
+                          Value: "PROCESSED"
+                        },
+                        modified: {
+                          Action: "PUT",
+                          Value: new Date().valueOf()
+                        }
+                      }
+                    };
+
+                    docClient.update(params, function(err, data) {
+                      if (err) {
+                        handleError(err);
+                      }
+                    });
+                  })
+                  .catch(function(e) {
+                    handleError(e);
+                  });
+                
+              });
             });
           }
         });
@@ -931,14 +933,20 @@ function mungeCitation(citation) {
     Status: "None",
     Type: "None",
     ViolationDate: "None",
-    ViolationLocation: "None"
+    ViolationLocation: "None",
+    query_count: -1
   };
-
+  
   for (var columnName in columns) {
     if (citation.hasOwnProperty(columnName)) {
+      // Only update the column value if it is null or empty string
       if (citation[columnName] == null || citation[columnName] == "") {
         citation[columnName] = columns[columnName];
       }
+    }
+    else {
+      // add the column
+      citation[columnName] = columns[columnName];
     }
   }
 }

@@ -1,6 +1,7 @@
 const MINIMUM_CITATION_ID = 0,
   noPlateFoundCitationNumber = -1,
-  noCitationsFoundCitationNumber = -2;
+  noCitationsFoundCitationNumber = -2,
+  CitationLicenseQueryCount = -3;
 
 // Exported functions that unit tests need.
 module.exports = {
@@ -8,16 +9,17 @@ module.exports = {
   ProcessCitationsForRequest: ProcessCitationsForRequest,
   // TODO: Move these to a library that jurisdictions can require.
   CitationIDNoPlateFound: noPlateFoundCitationNumber,
-  CitationIDNoCitationsFound: noCitationsFoundCitationNumber
+  CitationIDNoCitationsFound: noCitationsFoundCitationNumber,
+  CitationLicenseQueryCount: CitationLicenseQueryCount
 };
 
 // modules
-const express = require("express"),
+var convert = require("xml-js"),
+    express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     path = require("path"),
-    soap = require("soap"),
-    convert = require("xml-js");
+    soap = require("soap");
 
 var app = express();
 
