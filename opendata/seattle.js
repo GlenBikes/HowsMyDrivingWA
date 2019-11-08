@@ -14,12 +14,12 @@ module.exports = {
 };
 
 // modules
-var convert = require("xml-js"),
-    express = require("express"),
+const express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     path = require("path"),
-    soap = require("soap");
+    soap = require("soap"),
+    convert = require("xml-js");
 
 var app = express();
 

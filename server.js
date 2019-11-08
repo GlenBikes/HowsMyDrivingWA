@@ -53,7 +53,7 @@ var parkingAndCameraViolationsText =
   "Total parking and camera violations for #";
 var violationsByYearText = "Violations by year for #";
 var violationsByStatusText = "Violations by status for #";
-var licenseQueriedCountText = "License __LICENSE__ has been queried __COUNT__ times.";
+var licenseQueriedCountText = "Liceense __LICENSE__ has been queried __COUNT__ times.";
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
 var botScreenNameRegexp = new RegExp(
   "@" + process.env.TWITTER_HANDLE + "\\b",
