@@ -7,25 +7,26 @@ module.exports = {
 import JSON2HTML from "./json2html/json2html.js";
 
 /* Setting things up. */
-var AWS = require("aws-sdk"),
-  fs = require("fs"),
-  path = require("path"),
+const AWS = require("aws-sdk"),
   express = require("express"),
-  app = express(),
+  fs = require("fs"),
+  license = require("./opendata/licensehelper"),
+  seattle = require("./opendata/seattle"),
+  path = require("path"),
   soap = require("soap"),
   Twit = require("twit"),
   convert = require("xml-js"),
-  uuidv1 = require("uuid/v1"),
-  license = require("./opendata/licensehelper"),
-  seattle = require("./opendata/seattle"),
-  config = {
-    twitter: {
-      consumer_key: process.env.CONSUMER_KEY,
-      consumer_secret: process.env.CONSUMER_SECRET,
-      access_token: process.env.ACCESS_TOKEN,
-      access_token_secret: process.env.ACCESS_TOKEN_SECRET
-    }
-  },
+  uuidv1 = require("uuid/v1");
+
+  var app = express(),
+    config = {
+      twitter: {
+        consumer_key: process.env.CONSUMER_KEY,
+        consumer_secret: process.env.CONSUMER_SECRET,
+        access_token: process.env.ACCESS_TOKEN,
+        access_token_secret: process.env.ACCESS_TOKEN_SECRET
+      }
+    },
   T = new Twit(config.twitter);
 
 const MAX_RECORDS_BATCH = 2000,
@@ -52,6 +53,7 @@ var parkingAndCameraViolationsText =
   "Total parking and camera violations for #";
 var violationsByYearText = "Violations by year for #";
 var violationsByStatusText = "Violations by status for #";
+var licenseQueriedCountText = "Liceense __LICENSE__ has been queried __COUNT__ times.";
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
 var botScreenNameRegexp = new RegExp(
   "@" + process.env.TWITTER_HANDLE + "\\b",
@@ -138,7 +140,7 @@ app.all("/tweet", function(request, response) {
                   PutRequest: {
                     Item: {
                       id: uuidv1(),
-                      license: `${state}:${plate}`,
+                      license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
                       created: now,
                       modified: now,
                       processing_status: "UNPROCESSED",
@@ -150,6 +152,7 @@ app.all("/tweet", function(request, response) {
                     }
                   }
                 };
+                
                 request_records.push(item);
               }
             } else {
@@ -451,7 +454,7 @@ app.all("/processrequests", function(request, response) {
             // Wait for all the citation writes to complete to
             // ensure we don't update the request in the case
             // where one or more of these writes failed.
-            Promise.all(batchWritePromises)
+            Promise.all(batchWritePromises.push(queryCountPromise))
               .then(function(results) {
                 var params = {
                   TableName: tableNames['Request'],
@@ -482,48 +485,54 @@ app.all("/processrequests", function(request, response) {
 
           
           } else {
-            seattle.GetCitationsByPlate(plate, state).then(function(citations) {
-              if (!citations || citations.length == 0) {
-                var now = new Date().valueOf();
-                var citation = {
-                  id: uuidv1(),
-                  Citation: seattle.CitationIDNoCitationsFound,
-                  request_id: item.id,
-                  license: item.license,
-                  created: now,
-                  modified: now,
-                  tweet_id: item.tweet_id,
-                  tweet_id_str: item.tweet_id_str,
-                  tweet_user_id: item.tweet_user_id,
-                  tweet_user_id_str: item.tweet_user_id_str,
-                  tweet_user_screen_name: item.tweet_user_screen_name,
-                  processing_status: "UNPROCESSED"
-                }
+            var queryCountPromise = GetQueryCount(plate, state)
 
+            seattle.GetCitationsByPlate(plate, state).then(function(citations) {
+              // Also wait for the query count promise to resolve.
+              queryCountPromise.then( (querycount) => {
+                // Create the query count citation
+                var now = new Date().valueOf();
+                var queryCountCitation = {
+                    id: uuidv1(),
+                    Citation: seattle.CitationLicenseQueryCount,
+                    request_id: item.id,
+                    processing_status: "UNPROCESSED",
+                    query_count_text: licenseQueriedCountText.replace('__LICENSE__', license.formatPlate(`${state}:${plate}`)).replace('__COUNT__', querycount),
+                    license: item.license,
+                    created: now,
+                    modified: now,
+                    tweet_id: item.tweet_id,
+                    tweet_id_str: item.tweet_id_str,
+                    tweet_user_id: item.tweet_user_id,
+                    tweet_user_id_str: item.tweet_user_id_str,
+                    tweet_user_screen_name: item.tweet_user_screen_name
+                }
+                
                 // DynamoDB does not allow any property to be null or empty string.
                 // Set these values to 'None'.
-                mungeCitation(citation);
+                mungeCitation(queryCountCitation);
 
                 citation_records.push({
                   PutRequest: {
-                    Item: citation
+                    Item: queryCountCitation
                   }
                 });
-              } else {
-                citations.forEach(citation => {
-                  var now = new Date().valueOf();
 
-                  citation.id = uuidv1();
-                  citation.request_id = item.id;
-                  citation.processing_status = "UNPROCESSED";
-                  citation.license = item.license;
-                  citation.created = now;
-                  citation.modified = now;
-                  citation.tweet_id = item.tweet_id;
-                  citation.tweet_id_str = item.tweet_id_str;
-                  citation.tweet_user_id = item.tweet_user_id;
-                  citation.tweet_user_id_str = item.tweet_user_id_str;
-                  citation.tweet_user_screen_name = item.tweet_user_screen_name;
+                if (!citations || citations.length == 0) {
+                  var citation = {
+                    id: uuidv1(),
+                    Citation: seattle.CitationIDNoCitationsFound,
+                    request_id: item.id,
+                    license: item.license,
+                    created: now,
+                    modified: now,
+                    tweet_id: item.tweet_id,
+                    tweet_id_str: item.tweet_id_str,
+                    tweet_user_id: item.tweet_user_id,
+                    tweet_user_id_str: item.tweet_user_id_str,
+                    tweet_user_screen_name: item.tweet_user_screen_name,
+                    processing_status: "UNPROCESSED"
+                  }
 
                   // DynamoDB does not allow any property to be null or empty string.
                   // Set these values to 'None'.
@@ -534,8 +543,34 @@ app.all("/processrequests", function(request, response) {
                       Item: citation
                     }
                   });
-                });
-              }
+                } else {
+                  citations.forEach(citation => {
+                    var now = new Date().valueOf();
+
+                    citation.id = uuidv1();
+                    citation.request_id = item.id;
+                    citation.processing_status = "UNPROCESSED";
+                    citation.license = item.license;
+                    citation.created = now;
+                    citation.modified = now;
+                    citation.tweet_id = item.tweet_id;
+                    citation.tweet_id_str = item.tweet_id_str;
+                    citation.tweet_user_id = item.tweet_user_id;
+                    citation.tweet_user_id_str = item.tweet_user_id_str;
+                    citation.tweet_user_screen_name = item.tweet_user_screen_name;
+
+                    // DynamoDB does not allow any property to be null or empty string.
+                    // Set these values to 'None'.
+                    mungeCitation(citation);
+
+                    citation_records.push({
+                      PutRequest: {
+                        Item: citation
+                      }
+                    });
+                  });
+                }
+              });
               
               
               // Write the citations to DB
@@ -906,6 +941,12 @@ function mungeCitation(citation) {
       }
     }
   }
+}
+
+function GetQueryCount(plate, state) {
+  return new Promise( (resolve, reject) => {
+    resolve (23);
+  });
 }
 
 function SendResponses(origTweet, report_items) {
