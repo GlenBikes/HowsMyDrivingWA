@@ -1,7 +1,9 @@
+// TODO: Remove this dependency
+var server = require('../server');
+
 const MINIMUM_CITATION_ID = 0,
   noPlateFoundCitationNumber = -1,
-  noCitationsFoundCitationNumber = -2,
-  CitationLicenseQueryCount = -3;
+  noCitationsFoundCitationNumber = -2;
 
 // Exported functions that unit tests need.
 module.exports = {
@@ -9,8 +11,7 @@ module.exports = {
   ProcessCitationsForRequest: ProcessCitationsForRequest,
   // TODO: Move these to a library that jurisdictions can require.
   CitationIDNoPlateFound: noPlateFoundCitationNumber,
-  CitationIDNoCitationsFound: noCitationsFoundCitationNumber,
-  CitationLicenseQueryCount: CitationLicenseQueryCount
+  CitationIDNoCitationsFound: noCitationsFoundCitationNumber
 };
 
 // modules
@@ -58,7 +59,7 @@ function GetCitationsByPlate(plate, state) {
       // Now put the unique citations back to an array
       var allCitations = Object.keys(citationsByCitationID).map(function(v) { return citationsByCitationID[v]; });
 
-      console.log(`Found ${allCitations.length} for vehicle with plate ${state}:${plate}`);
+      console.log(`Found ${allCitations.length} citations for vehicle with plate ${state}:${plate}`);
       resolve(allCitations);
     });
   });
@@ -155,21 +156,21 @@ function ProcessCitationsForRequest( citations ) {
   } else if (citations.length == 1 && citations[0].Citation < MINIMUM_CITATION_ID) {
     switch ( citations[0].Citation ) {
       case noPlateFoundCitationNumber:
-        return [
+        return Promise.resolve([
           noValidPlate
-        ];
+        ]);
         break;
         
       case noCitationsFoundCitationNumber:
-        return [
-          `${noCitationsFoundMessage}${licenseHelper.formatPlate(citations[0].license)}`
-        ];
-        break
-        
-      case CitationLicenseQueryCount:
-        return [
-          citationQueryText.replace('__LICENSE__', licenseHelper.formatPlate(citations[0].license)).replace('__COUNT__', citations[0].query_count)
-        ];
+        return new Promise( (resolve, reject) => {
+          server._getQueryCount(citations[0].license).then( (query_count) => {
+            resolve( [
+              `${noCitationsFoundMessage}${licenseHelper.formatPlate(citations[0].license)}` +
+              "\n\n" +
+              citationQueryText.replace('__LICENSE__', licenseHelper.formatPlate(citations[0].license)).replace('__COUNT__', query_count)
+            ]);
+          });
+        });
         break
         
       default:
@@ -178,8 +179,8 @@ function ProcessCitationsForRequest( citations ) {
     }
   } else {
     var license;
-    var query_count = -1;
-
+    var query_count;
+    
     for (var i = 0; i < citations.length; i++) {
       var citation = citations[i];
       var year = "Unknown";
@@ -190,12 +191,6 @@ function ProcessCitationsForRequest( citations ) {
         license = citation.license;
       }
       
-      // Handle the query count citation specially since it is not actually a citation.
-      if (citation.Citation == CitationLicenseQueryCount) {
-        query_count = citation.query_count;
-        continue;
-      }
-
       try {
         violationDate = new Date(Date.parse(citation.ViolationDate));
       } catch (e) {
@@ -228,72 +223,73 @@ function ProcessCitationsForRequest( citations ) {
       violationsByYear[year]++;
     }
     
-    var general_summary =
-      parkingAndCameraViolationsText +
-      licenseHelper.formatPlate(license) +
-      ": " +
-      // If we got a query count, that is not a citation.
-      Object.keys(citations).length - (query_count >= 0 ? 1 : 0);
-    
-    Object.keys(categorizedCitations).forEach( key => {
-      var line = key + ": " + categorizedCitations[key];
+    return new Promise( (resolve, reject) => {
+      server._getQueryCount(license).then( (query_count) => {
+        var general_summary =
+          parkingAndCameraViolationsText +
+          licenseHelper.formatPlate(license) +
+          ": " +
+          Object.keys(citations).length;
 
-      // Max twitter username is 15 characters, plus the @
-      general_summary += "\n";
-      general_summary += line;
-    });
-    
-    if (query_count >= 0) {
-      general_summary += "\n\n";
-      general_summary += citationQueryText
-        .replace('__LICENSE__', licenseHelper.formatPlate(license))
-        .replace('__COUNT__', query_count);
-    }
-    
-    var detailed_list = "";
+        Object.keys(categorizedCitations).forEach( key => {
+          var line = key + ": " + categorizedCitations[key];
 
-    var sortedChronoCitationKeys = Object.keys(chronologicalCitations).sort(
-      function(a, b) {
-        return new Date(a).getTime() - new Date(b).getTime();
-      }
-    );
-    
-    var first = true;
+          // Max twitter username is 15 characters, plus the @
+          general_summary += "\n";
+          general_summary += line;
+        });
 
-    for (var i = 0; i < sortedChronoCitationKeys.length; i++) {
-      var key = sortedChronoCitationKeys[i];
+        general_summary += "\n\n";
+        general_summary += citationQueryText
+          .replace('__LICENSE__', licenseHelper.formatPlate(license))
+          .replace('__COUNT__', query_count);
 
-      chronologicalCitations[key].forEach( citation => {
-        if (first != true) {
-          detailed_list += "\n";
+        var detailed_list = "";
+
+        var sortedChronoCitationKeys = Object.keys(chronologicalCitations).sort(
+          function(a, b) {
+            return new Date(a).getTime() - new Date(b).getTime();
+          }
+        );
+
+        var first = true;
+
+        for (var i = 0; i < sortedChronoCitationKeys.length; i++) {
+          var key = sortedChronoCitationKeys[i];
+
+          chronologicalCitations[key].forEach( citation => {
+            if (first != true) {
+              detailed_list += "\n";
+            }
+            first = false;
+            detailed_list += `${citation.ViolationDate}, ${citation.Type}, ${citation.ViolationLocation}, ${citation.Status}`;
+          });
         }
-        first = false;
-        detailed_list += `${citation.ViolationDate}, ${citation.Type}, ${citation.ViolationLocation}, ${citation.Status}`;
-      });
-    }
 
-    var temporal_summary = violationsByYearText + licenseHelper.formatPlate(license) + ":";
-    Object.keys(violationsByYear).forEach( key => {
-      temporal_summary += "\n";
-      temporal_summary += `${key}: ${violationsByYear[key]}`;
-    });
-    
-    var type_summary = violationsByStatusText + licenseHelper.formatPlate(license) + ":";
-    Object.keys(violationsByStatus).forEach( key => {
-      type_summary += "\n";
-      type_summary += `${key}: ${violationsByStatus[key]}`;
+        var temporal_summary = violationsByYearText + licenseHelper.formatPlate(license) + ":";
+        Object.keys(violationsByYear).forEach( key => {
+          temporal_summary += "\n";
+          temporal_summary += `${key}: ${violationsByYear[key]}`;
+        });
+
+        var type_summary = violationsByStatusText + licenseHelper.formatPlate(license) + ":";
+        Object.keys(violationsByStatus).forEach( key => {
+          type_summary += "\n";
+          type_summary += `${key}: ${violationsByStatus[key]}`;
+        });
+
+        // Return them in the order they should be rendered.
+        var result = [
+          general_summary,
+          detailed_list,
+          type_summary,
+          temporal_summary
+        ];
+
+        resolve(result);
+      });
     });
   }
-
-  // Return them in the order they should be rendered.
-  var result = [
-    general_summary,
-    detailed_list,
-    type_summary,
-    temporal_summary
-  ];
-  
-  return result;
 }
 
 // Print out subset of citation object properties.
