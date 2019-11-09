@@ -487,10 +487,8 @@ app.all("/processrequests", function(request, response) {
             var queryCountPromise = GetQueryCount(plate, state);
 
             seattle.GetCitationsByPlate(plate, state).then(function(citations) {
-              debugger;
               // Also wait for the query count promise to resolve.
               queryCountPromise.then( (querycount) => {
-                debugger;
                 // Create the query count citation
                 var now = new Date().valueOf();
                 var queryCountCitation = {
