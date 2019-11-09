@@ -14,12 +14,12 @@ module.exports = {
 };
 
 // modules
-const express = require("express"),
+var convert = require("xml-js"),
+    express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     path = require("path"),
-    soap = require("soap"),
-    convert = require("xml-js");
+    soap = require("soap");
 
 var app = express();
 
@@ -27,8 +27,7 @@ const noCitationsFoundMessage = "No citations found for plate #",
   noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",
   parkingAndCameraViolationsText = "Total parking and camera violations for #",
   violationsByYearText = "Violations by year for #",
-  violationsByStatusText = "Violations by status for #",
-  citationQueryText = "License #__LICENSE__ has been queried __COUNT__ times.";
+  violationsByStatusText = "Violations by status for #";
 
 var url =
   "https://web6.seattle.gov/Courts/ECFPortal/JSONServices/ECFControlsService.asmx?wsdl";
@@ -166,19 +165,12 @@ function ProcessCitationsForRequest( citations ) {
         ];
         break
         
-      case CitationLicenseQueryCount:
-        return [
-          citationQueryText.replace('__LICENSE__', licenseHelper.formatPlate(citations[0].license)).replace('__COUNT__', citations[0].query_count)
-        ];
-        break
-        
       default:
         throw new Error(`ERROR: Unexpected citation ID: ${citations[0].Citation}.`);
         break;
     }
   } else {
     var license;
-    var query_count = -1;
 
     for (var i = 0; i < citations.length; i++) {
       var citation = citations[i];
@@ -188,12 +180,6 @@ function ProcessCitationsForRequest( citations ) {
       // All citations are from the same license
       if (license == null) {
         license = citation.license;
-      }
-      
-      // Handle the query count citation specially since it is not actually a citation.
-      if (citation.Citation == CitationLicenseQueryCount) {
-        query_count = citation.query_count;
-        continue;
       }
 
       try {
@@ -241,13 +227,6 @@ function ProcessCitationsForRequest( citations ) {
       general_summary += "\n";
       general_summary += line;
     });
-    
-    if (query_count >= 0) {
-      general_summary += "\n\n";
-      general_summary += citationQueryText
-        .replace('__LICENSE__', licenseHelper.formatPlate(license))
-        .replace('__COUNT__', query_count);
-    }
     
     var detailed_list = "";
 
