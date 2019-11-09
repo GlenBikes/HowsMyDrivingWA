@@ -5,8 +5,6 @@ module.exports = {
   _getQueryCount: GetQueryCount
 };
 
-import JSON2HTML from "./json2html/json2html.js";
-
 /* Setting things up. */
 const AWS = require("aws-sdk"),
   express = require("express"),
@@ -639,6 +637,8 @@ app.all("/processcitations", function(request, response) {
   GetCitationRecords().then(function(citations) {
     if (citations && citations.length > 0) {
       var citationsByRequest = {};
+      
+      log.info(`Found ${citations.length} citation records.`);
 
       // Sort them based on request
       citations.forEach(function(citation) {
@@ -1061,11 +1061,50 @@ function printObject(o, indent) {
 function getLastDmId() {
   var lastdm = localStorage.getItem('lastdm');
   
+  // TODO: Should we rather just add some code to go query what the most 
+  // recent tweet/dm id is (can we even do that with dm?) and set that as
+  // the last id?
+  if (!lastdm) {
+    // When moving from storing this in local file to using localstorage,
+    // There is the first-time read that will return 0.
+    // This would result in the bot reprocessing every tweet that is still
+    // in the twitter delayed feed.
+    // To avoid this, we put the current lastdmid in the .env file
+    // and read it from there in this first-read scenario.
+    if (process.env.hasOwnProperty("FALLBACK_LAST_DM_ID")) {
+      lastdm = process.env.FALLBACK_LAST_DM_ID;
+      
+      if (lastdm <= 0) {
+        throw new Error("No last dm id found.");
+      } else {
+        setLastDmId(lastdm);
+      }
+    }  
+  }
+  
   return lastdm ? lastdm : 0;
 }
 
 function getLastMentionId() {
   var lastmention = localStorage.getItem('lastmention');
+  
+  if (!lastmention) {
+    // When moving from storing this in local file to using localstorage,
+    // There is the first-time read that will return 0.
+    // This would result in the bot reprocessing every tweet that is still
+    // in the twitter delayed feed.
+    // To avoid this, we put the current lastmentionid in the .env file
+    // and read it from there in this first-read scenario.
+    if (process.env.hasOwnProperty("FALLBACK_LAST_MENTION_ID")) {
+      lastmention = process.env.FALLBACK_LAST_MENTION_ID;
+      
+      if (lastmention <= 0) {
+        throw new Error("No last mention id found.");
+      } else {
+        setLastMentionId(lastmention);
+      }
+    }  
+  }
   
   return lastmention ? lastmention : 0;
 }
