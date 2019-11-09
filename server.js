@@ -12,6 +12,8 @@ const AWS = require("aws-sdk"),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),
+  LocalStorage = require('node-localstorage').LocalStorage,
+  log4js = require('log4js'),
   seattle = require("./opendata/seattle"),
   path = require("path"),
   soap = require("soap"),
@@ -30,24 +32,28 @@ var app = express(),
   },
   T = new Twit(config.twitter);
 
+// Local storage to keep track of our last processed tweet/dm
+var localStorage = new LocalStorage('./_localstore.txt');
+
+// Log files
+log4js.configure('config/log4js.json');
+var log = log4js.getLogger(),
+    lastdmLog = log4js.getLogger("lastdm"),
+    lastmentionLog = log4js.getLogger("lastmention");
+
 const MAX_RECORDS_BATCH = 2000,
   INTER_TWEET_DELAY_MS =
     process.env.hasOwnProperty("INTER_TWEET_DELAY_MS") &&
     process.env.INTER_TWEET_DELAY_MS > 0
       ? process.env.INTER_TWEET_DELAY_MS
       : 1000,
-  maxIdFileLen = 100,
-  maxErrorFileLen = 100,
-  lastDMFilename = "_last_dm_id.txt",
-  lastMentionFilename = "_last_mention_id.txt",
-  errorFilename = "_errors.txt",
   tableNames = {
     Request: `${process.env.DB_PREFIX}_Request`,
     Citations: `${process.env.DB_PREFIX}_Citations`,
     ReportItems: `${process.env.DB_PREFIX}_ReportItems`
   };
 
-console.log(`${process.env.TWITTER_HANDLE}: start`);
+log.info(`${process.env.TWITTER_HANDLE}: start`);
 
 AWS.config.update({ region: "us-east-2" });
 
@@ -69,7 +75,7 @@ var botScreenNameRegexp = new RegExp(
 app.use(express.static("public"));
 
 var listener = app.listen(process.env.PORT, function() {
-  console.log(`Your bot is running on port ${listener.address().port}`);
+  log.info(`Your bot is running on port ${listener.address().port}`);
 });
 
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
@@ -119,7 +125,7 @@ app.all("/tweet", function(request, response) {
           */
           var maxTweetIdRead = -1;
           data.statuses.forEach(function(status) {
-            console.log(`Found ${printTweet(status)}`);
+            log.debug(`Found ${printTweet(status)}`);
 
             if (maxTweetIdRead < status.id_str) {
               maxTweetIdRead = status.id_str;
@@ -134,9 +140,9 @@ app.all("/tweet", function(request, response) {
             if (!chomped || botScreenNameRegexp.test(chomped_text)) {
               /* Don't reply to retweet or our own tweets. */
               if (status.hasOwnProperty("retweet_status")) {
-                console.log(`Ignoring retweet: ${status.full_text}`);
+                log.debug(`Ignoring retweet: ${status.full_text}`);
               } else if (status.user.id == app_id) {
-                console.log("Ignoring our own tweet: " + status.full_text);
+                log.debug("Ignoring our own tweet: " + status.full_text);
               } else {
                 const { state, plate } = parseTweet(chomped_text);
                 var now = new Date().valueOf();
@@ -160,7 +166,7 @@ app.all("/tweet", function(request, response) {
                 request_records.push(item);
               }
             } else {
-              console.log(
+              log.debug(
                 "Ignoring reply that didn't actually reference bot: " +
                   status.full_text
               );
@@ -216,7 +222,7 @@ app.all("/tweet", function(request, response) {
             });
         } else {
           /* No new mentions since the last time we checked. */
-          console.log("No new mentions...");
+          log.debug("No new mentions...");
         }
       }
     );
@@ -238,7 +244,7 @@ app.all("/tweet", function(request, response) {
     /* Next, let's DM's to our bot, starting after the last DM we responded to. */
     if (dms.length) {
       dms.forEach(function(dm) {
-        console.log(
+        log.debug(
           `Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`
         );
 
@@ -261,7 +267,7 @@ app.all("/tweet", function(request, response) {
       });
     } else {
       /* No new DMs since the last time we checked. */
-      console.log("No new DMs...");
+      log.debug("No new DMs...");
     }
   });
 
@@ -313,7 +319,7 @@ app.all("/test", function(request, response) {
       test_results +=
         "*********************************************\n\nTests all finished!\n\n********************************************";
       // send your email here
-      console.log(test_results);
+      log.debug(test_results);
       if (!failures) {
         response.sendStatus(200);
       } else {
@@ -324,12 +330,12 @@ app.all("/test", function(request, response) {
 });
 
 app.all("/dumpfile", function(request, response) {
-  var fileName = `${__dirname}/${lastMentionFilename}`;
+  var fileName = `${__dirname}/log/err.log`;
 
   if (request.query.hasOwnProperty("filename")) {
     fileName = `${__dirname}/${request.query.filename}`;
   }
-  console.log(`Sending file: ${fileName}.`);
+  log.info(`Sending file: ${fileName}.`);
   response.sendFile(fileName);
 });
 
@@ -374,9 +380,9 @@ app.all("/dumpcitations", function(request, response) {
 });
 
 app.all("/errors", function(request, response) {
-  var fileName = `${__dirname}/${errorFilename}`;
+  var fileName = `${__dirname}/log/err.log`;
 
-  console.log(`Sending file: ${fileName}.`);
+  log.info(`Sending file: ${fileName}.`);
   response.sendFile(fileName);
 });
 
@@ -399,7 +405,7 @@ app.all("/processrequests", function(request, response) {
           }
 
           if (state == null || state == "" || plate == null || plate == "") {
-            console.log(
+            log.warn(
               `Not a valid state/plate in this request (${state}/${plate}).`
             );
             // There was no valid plate found in the tweet. Add a dummy citation.
@@ -618,7 +624,7 @@ app.all("/processrequests", function(request, response) {
           }
         });
       } else {
-        console.log("No request records found.");
+        log.debug("No request records found.");
       }
     })
     .catch(err => {
@@ -724,7 +730,7 @@ app.all("/processcitations", function(request, response) {
           });
       });
     } else {
-      console.log("No citations found.");
+      log.debug("No citations found.");
     }
 
     response.sendStatus(200);
@@ -840,7 +846,7 @@ app.all("/processreportitems", function(request, response) {
             });
         });
       } else {
-        console.log("No report items found.");
+        log.debug("No report items found.");
       }
     })
     .catch(function(err) {
@@ -881,7 +887,7 @@ function parseTweet(text) {
   const matches = licenseRegExp.exec(text);
 
   if (matches == null || matches.length < 2 || matches[1] == "XX") {
-    console.log(`No license found in tweet: ${text}`);
+    log.warn(`No license found in tweet: ${text}`);
   } else {
     state = matches[1];
     plate = matches[2];
@@ -977,7 +983,7 @@ function SendResponses(origTweet, report_items) {
 
   /* Now we can respond to each tweet. */
   var tweetText = "@" + replyToScreenName + " " + report_item.tweet_text;
-  console.log(`Sending Tweet: ${tweetText}.`);
+  log.debug(`Sending Tweet: ${tweetText}.`);
   return new Promise((resolve, reject) => {
     T.post(
       "statuses/update",
@@ -990,7 +996,7 @@ function SendResponses(origTweet, report_items) {
         if (err) {
           handleError(err);
         } else {
-          console.log(`Sent tweet: ${printTweet(data)}.`);
+          log.debug(`Sent tweet: ${printTweet(data)}.`);
 
           // Wait a bit. It seems tweeting a whackload of tweets in quick succession
           // can cause Twitter to think you're a troll bot or something and then some
@@ -1053,83 +1059,27 @@ function printObject(o, indent) {
 }
 
 function getLastDmId() {
-  return getLastIdFromFile(lastDMFilename);
+  var lastdm = localStorage.getItem('lastdm');
+  
+  return lastdm ? lastdm : 0;
 }
 
 function getLastMentionId() {
-  return getLastIdFromFile(lastMentionFilename);
-}
-
-function getLastIdFromFile(filename) {
-  const lineByLine = require("n-readlines", function(err) {
-    if (err) {
-      handleError(err);
-    }
-  });
-
-  try {
-    const filepath = `${__dirname}/${filename}`;
-    const liner = new lineByLine(filepath);
-    var lastIdRegExp = /\b(\d+)(: [\d\.\: ])?\b/;
-    var lastId;
-    let line;
-
-    while ((line = liner.next())) {
-      // strip off the date if present, it's only used for debugging.
-      // First, let's load the ID of the last tweet we responded to.
-      const matches = lastIdRegExp.exec(line);
-      if (matches == null || matches.length < 1) {
-        handleError(new Error(`Error: No last mention found: ${line}`));
-      } else if (lastId == undefined) {
-        lastId = matches[1];
-        break;
-      }
-    }
-  } catch (err) {
-    handleError(err);
-  }
-
-  return lastId;
+  var lastmention = localStorage.getItem('lastmention');
+  
+  return lastmention ? lastmention : 0;
 }
 
 function setLastDmId(lastDmId) {
-  console.log(`Writing last dm id ${lastDmId}.`);
-  setLastIdInFile(lastDMFilename, lastDmId, maxIdFileLen);
+  log.debug(`Writing last dm id ${lastDmId}.`);
+  lastdmLog.info(`Writing last dm id ${lastDmId}.`);
+  localStorage.setItem('lastdm', lastDmId);
 }
 
 function setLastMentionId(lastMentionId) {
-  console.log(`Writing last mention id ${lastMentionId}.`);
-  setLastIdInFile(lastMentionFilename, lastMentionId, maxIdFileLen);
-}
-
-function setLastIdInFile(filename, lastId, maxLines) {
-  var filepath = `${__dirname}/${filename}`;
-  var today = new Date();
-  var newLine =
-    lastId +
-    ": " +
-    today.toLocaleDateString() +
-    " " +
-    today.toLocaleTimeString();
-
-  prependFile(filepath, newLine, maxLines);
-}
-
-function prependFile(filePath, newLines, maxLines) {
-  // Read file into memory
-  var textBuf = fs.readFileSync(filePath);
-  var textByLines = textBuf.toString().split("\n");
-
-  textByLines = newLines.split("\n").concat(textByLines);
-
-  // truncate to specified number of lines
-  textByLines = textByLines.slice(0, maxLines);
-
-  fs.writeFileSync(filePath, textByLines.join("\n"), function(err) {
-    if (err) {
-      handleError(err);
-    }
-  });
+  log.debug(`Writing last mention id ${lastMentionId}.`);
+  lastmentionLog.info(`Writing last mention id ${lastMentionId}.`);
+  localStorage.setItem('lastmention', lastMentionId);
 }
 
 // Print out subset of tweet object properties.
@@ -1153,24 +1103,16 @@ function printTweet(tweet) {
 }
 
 function handleError(error) {
-  var filepath = `${__dirname}/${errorFilename}`;
-  var today = new Date();
-  var date = today.toLocaleDateString();
-
-  //var time = today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds();
-  var time = today.toLocaleTimeString();
-  var dateTime = date + " " + time;
-
-  console.log(`ERROR: ${error}`);
+  log.error(`ERROR: ${error}`);
 
   // Truncate the callstack because only the first few lines are relevant to this code.
   var stacktrace = error.stack
     .split("\n")
     .slice(0, 10)
     .join("\n");
-  var formattedError = `============================== ${dateTime} =========================================\n${error.message}\n${stacktrace}`;
+  var formattedError = `===============================================================================\n${error.message}\n${stacktrace}`;
 
-  prependFile(filepath, formattedError, maxErrorFileLen);
+  log.error(formattedError);
 }
 
 function logTweetById(id) {
