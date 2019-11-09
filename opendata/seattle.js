@@ -14,12 +14,12 @@ module.exports = {
 };
 
 // modules
-const express = require("express"),
+var convert = require("xml-js"),
+    express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     path = require("path"),
-    soap = require("soap"),
-    convert = require("xml-js");
+    soap = require("soap");
 
 var app = express();
 
@@ -232,7 +232,8 @@ function ProcessCitationsForRequest( citations ) {
       parkingAndCameraViolationsText +
       licenseHelper.formatPlate(license) +
       ": " +
-      Object.keys(citations).length;
+      // If we got a query count, that is not a citation.
+      Object.keys(citations).length - (query_count >= 0 ? 1 : 0);
 
     Object.keys(categorizedCitations).forEach( key => {
       var line = key + ": " + categorizedCitations[key];
