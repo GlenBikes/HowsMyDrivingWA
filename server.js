@@ -647,11 +647,9 @@ app.all("/processcitations", function(request, response) {
       Object.keys(citationsByRequest).forEach(function(request_id) {
         // Get the first citation to access citation columns
         var citation = citationsByRequest[request_id][0];
-        debugger;
         seattle
           .ProcessCitationsForRequest(citationsByRequest[request_id])
           .then(report_items => {
-            debugger;
 
             // Write report items
             WriteReportItemRecords(request_id, citation, report_items)
@@ -948,8 +946,6 @@ async function GetQueryCount(license) {
     }
   };
 
-  debugger;
-
   return new Promise(function(resolve, reject) {
     // 1. Do a query to get just the citations that are UNPROCESSED.
     //    If the result is not complete, then we have to take the request_id's
@@ -960,7 +956,6 @@ async function GetQueryCount(license) {
       if (err) {
         handleError(err);
       } else {
-        debugger;
         resolve(result.Count);
       }
     });
@@ -1429,8 +1424,6 @@ function GetReportItemRecords() {
 function WriteReportItemRecords(request_id, citation, report_items) {
   var docClient = new AWS.DynamoDB.DocumentClient();
   var truncated_report_items = [];
-
-  debugger;
 
   // 1. Go through all report_items and split up any that will be > 280 characters when tweeted.
   // TODO: We should probably do this when processing the records, not before writing them.

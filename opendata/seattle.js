@@ -59,7 +59,7 @@ function GetCitationsByPlate(plate, state) {
       // Now put the unique citations back to an array
       var allCitations = Object.keys(citationsByCitationID).map(function(v) { return citationsByCitationID[v]; });
 
-      console.log(`Found ${allCitations.length} for vehicle with plate ${state}:${plate}`);
+      console.log(`Found ${allCitations.length} citations for vehicle with plate ${state}:${plate}`);
       resolve(allCitations);
     });
   });
@@ -150,8 +150,6 @@ function ProcessCitationsForRequest( citations ) {
   var violationsByYear = {};
   var violationsByStatus = {};
   
-  debugger;
-  
   if (!citations || Object.keys(citations).length == 0) {
     // Should never happen. jurisdictions must return at least a dummy citation
     throw new Error("Jurisdiction modules must return at least one citation, a dummy one if there are none.");
@@ -166,7 +164,6 @@ function ProcessCitationsForRequest( citations ) {
       case noCitationsFoundCitationNumber:
         return new Promise( (resolve, reject) => {
           server._getQueryCount(citations[0].license).then( (query_count) => {
-            debugger;
             resolve( [
               `${noCitationsFoundMessage}${licenseHelper.formatPlate(citations[0].license)}` +
               "\n\n" +
@@ -289,7 +286,6 @@ function ProcessCitationsForRequest( citations ) {
           temporal_summary
         ];
 
-        debugger;
         resolve(result);
       });
     });
