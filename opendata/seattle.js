@@ -232,8 +232,9 @@ function ProcessCitationsForRequest( citations ) {
       parkingAndCameraViolationsText +
       licenseHelper.formatPlate(license) +
       ": " +
-      Object.keys(citations).length;
-
+      // If we got a query count, that is not a citation.
+      Object.keys(citations).length - (query_count >= 0 ? 1 : 0);
+    
     Object.keys(categorizedCitations).forEach( key => {
       var line = key + ": " + categorizedCitations[key];
 
