@@ -125,8 +125,6 @@ app.all("/tweet", function(request, response) {
             */
             const { chomped, chomped_text } = chompTweet(status);
             
-            debugger;
-
             if (!chomped || botScreenNameRegexp.test(chomped_text)) {
               /* Don't reply to retweet or our own tweets. */
               if (status.hasOwnProperty("retweet_status")) {
@@ -486,14 +484,11 @@ app.all("/processrequests", function(request, response) {
 
           
           } else {
-            debugger;
             var queryCountPromise = GetQueryCount(plate, state);
 
             seattle.GetCitationsByPlate(plate, state).then(function(citations) {
-              debugger;
               // Also wait for the query count promise to resolve.
               queryCountPromise.then( (querycount) => {
-                debugger;
                 // Create the query count citation
                 var now = new Date().valueOf();
                 var queryCountCitation = {
