@@ -19,8 +19,13 @@ var convert = require("xml-js"),
     express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
+    log4js = require('log4js'),
     path = require("path"),
     soap = require("soap");
+
+// Log files
+log4js.configure('config/log4js.json');
+var log = log4js.getLogger();
 
 var app = express();
 
@@ -59,7 +64,7 @@ function GetCitationsByPlate(plate, state) {
       // Now put the unique citations back to an array
       var allCitations = Object.keys(citationsByCitationID).map(function(v) { return citationsByCitationID[v]; });
 
-      console.log(`Found ${allCitations.length} citations for vehicle with plate ${state}:${plate}`);
+      log.debug(`Found ${allCitations.length} citations for vehicle with plate ${state}:${plate}`);
       resolve(allCitations);
     });
   });
@@ -92,7 +97,7 @@ function GetVehicleIDs(plate, state) {
             vehicle_records.push(vehicle);
           }
           else {
-            console.log(`Filtering out vehicle with plate ${state}:${vehicle.Plate}.`);
+            log.debug(`Filtering out vehicle with plate ${state}:${vehicle.Plate}.`);
           }
         }
         resolve(vehicle_records);
@@ -106,7 +111,7 @@ function GetCitationsByVehicleNum(vehicleID) {
     VehicleNumber: vehicleID
   };
   
-  console.log(`Getting citations for vehicle ID: ${vehicleID}.`);
+  log.debug(`Getting citations for vehicle ID: ${vehicleID}.`);
   
   return new Promise((resolve, reject) => {
     soap.createClient(url, function(err, client) {
