@@ -53,7 +53,7 @@ var parkingAndCameraViolationsText =
   "Total parking and camera violations for #";
 var violationsByYearText = "Violations by year for #";
 var violationsByStatusText = "Violations by status for #";
-var licenseQueriedCountText = "License __LICENSE__ has been queried __COUNT__ times.";
+var licenseQueriedCountText = "Liceense __LICENSE__ has been queried __COUNT__ times.";
 var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
 var botScreenNameRegexp = new RegExp(
   "@" + process.env.TWITTER_HANDLE + "\\b",
@@ -397,17 +397,16 @@ app.all("/processrequests", function(request, response) {
             var citation = {
               id: uuidv1(),
               Citation: seattle.CitationIDNoPlateFound,
-              processing_status: "UNPROCESSED",
-              license: item.license,
-              query_count: -1,
               request_id: item.id,
+              license: item.license,
               created: now,
               modified: now,
               tweet_id: item.tweet_id,
               tweet_id_str: item.tweet_id_str,
               tweet_user_id: item.tweet_user_id,
               tweet_user_id_str: item.tweet_user_id_str,
-              tweet_user_screen_name: item.tweet_user_screen_name
+              tweet_user_screen_name: item.tweet_user_screen_name,
+              processing_status: "UNPROCESSED"
             };
 
             citation_records.push({
@@ -487,10 +486,8 @@ app.all("/processrequests", function(request, response) {
             var queryCountPromise = GetQueryCount(plate, state);
 
             seattle.GetCitationsByPlate(plate, state).then(function(citations) {
-              debugger;
               // Also wait for the query count promise to resolve.
               queryCountPromise.then( (querycount) => {
-                debugger;
                 // Create the query count citation
                 var now = new Date().valueOf();
                 var queryCountCitation = {
@@ -524,8 +521,6 @@ app.all("/processrequests", function(request, response) {
                     id: uuidv1(),
                     Citation: seattle.CitationIDNoCitationsFound,
                     request_id: item.id,
-                    processing_status: "UNPROCESSED",
-                    query_count: -1,
                     license: item.license,
                     created: now,
                     modified: now,
@@ -533,7 +528,8 @@ app.all("/processrequests", function(request, response) {
                     tweet_id_str: item.tweet_id_str,
                     tweet_user_id: item.tweet_user_id,
                     tweet_user_id_str: item.tweet_user_id_str,
-                    tweet_user_screen_name: item.tweet_user_screen_name
+                    tweet_user_screen_name: item.tweet_user_screen_name,
+                    processing_status: "UNPROCESSED"
                   }
 
                   // DynamoDB does not allow any property to be null or empty string.
@@ -553,7 +549,6 @@ app.all("/processrequests", function(request, response) {
                     citation.request_id = item.id;
                     citation.processing_status = "UNPROCESSED";
                     citation.license = item.license;
-                    citation.query_count = -1;
                     citation.created = now;
                     citation.modified = now;
                     citation.tweet_id = item.tweet_id;
