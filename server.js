@@ -7,6 +7,7 @@ module.exports = {
 
 /* Setting things up. */
 const AWS = require("aws-sdk"),
+  queue = require('dynamo-batchwrite-queue'),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),
@@ -90,187 +91,220 @@ T.get("account/verify_credentials", {}, function(err, data, response) {
 
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request, response) {
-  var docClient = new AWS.DynamoDB.DocumentClient();
+  try {
+    debugger;
+    var maxTweetIdRead = -1;
+    var maxDmIdRead = -1;
+    // Collect promises from these operations so they can go in parallel
+    var twitter_promises = [];
+    var docClient = new AWS.DynamoDB.DocumentClient();
 
-  /* First, let's load the ID of the last tweet we responded to. */
-  var last_mention_id = getLastMentionId();
-  if (last_mention_id != undefined) {
-    /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
-    T.get(
-      "search/tweets",
-      {
-        q: "%40" + process.env.TWITTER_HANDLE,
-        since_id: last_mention_id,
-        tweet_mode: "extended"
-      },
-      function(err, data, response) {
-        if (err) {
-          handleError(err);
-          return false;
-        }
-
-        if (data.statuses.length) {
-          var request_records = [];
-
-          /* 
-          Iterate over each tweet. 
-
-          The replies can occur concurrently, but the threaded replies to each tweet must, 
-          within that thread, execute sequentially. 
-
-          Since each tweet with a mention is processed in parallel, keep track of largest ID
-          and write that at the end.
-          */
-          var maxTweetIdRead = -1;
-          data.statuses.forEach(function(status) {
-            log.debug(`Found ${printTweet(status)}`);
-
-            if (maxTweetIdRead < status.id_str) {
-              maxTweetIdRead = status.id_str;
-            }
-
-            /*
-            Make sure this isn't a reply to one of the bot's tweets which would
-            include the bot screen name in full_text, but only due to replies.
-            */
-            const { chomped, chomped_text } = chompTweet(status);
-
-            if (!chomped || botScreenNameRegexp.test(chomped_text)) {
-              /* Don't reply to retweet or our own tweets. */
-              if (status.hasOwnProperty("retweet_status")) {
-                log.debug(`Ignoring retweet: ${status.full_text}`);
-              } else if (status.user.id == app_id) {
-                log.debug("Ignoring our own tweet: " + status.full_text);
-              } else {
-                const { state, plate } = parseTweet(chomped_text);
-                var now = new Date().valueOf();
-                var item = {
-                  PutRequest: {
-                    Item: {
-                      id: uuidv1(),
-                      license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
-                      created: now,
-                      modified: now,
-                      processing_status: "UNPROCESSED",
-                      tweet_id: status.id,
-                      tweet_id_str: status.id_str,
-                      tweet_user_id: status.user.id,
-                      tweet_user_id_str: status.user.id_str,
-                      tweet_user_screen_name: status.user.screen_name
-                    }
-                  }
-                };
-
-                request_records.push(item);
-              }
-            } else {
-              log.debug(
-                "Ignoring reply that didn't actually reference bot: " +
-                  status.full_text
-              );
-            }
-          });
-
-          var startPos = 0;
-          var endPos = 25;
-
-          var startPos = 0;
-          var endPos;
-          var batchWritePromises = [];
-          while (startPos < request_records.length) {
-            endPos = startPos + 25;
-            if (endPos > request_records.length) {
-              endPos = request_records.length;
-            }
-
-            let params = {
-              RequestItems: {
-                [`${tableNames["Request"]}`]: request_records.slice(
-                  startPos,
-                  endPos
-                )
-              }
-            };
-
-            var batchWritePromise = new Promise((resolve, reject) => {
-              docClient.batchWrite(params, function(err, data) {
-                if (err) {
-                  handleError(err);
-                }
-
-                resolve(data);
-              });
-            });
-
-            batchWritePromises.push(batchWritePromise);
-
-            startPos = endPos;
-          }
-
-          // Wait for all the request writes to complete to
-          // ensure none of the writes failed.
-          Promise.all(batchWritePromises)
-            .then(function(results) {
-              if (maxTweetIdRead > last_mention_id) {
-                setLastMentionId(maxTweetIdRead);
-              }
-            })
-            .catch(function(e) {
-              handleError(e);
-            });
-        } else {
-          /* No new mentions since the last time we checked. */
-          log.debug("No new mentions...");
-        }
-      }
-    );
-  }
-
-  /* Respond to DMs */
-  /* Load the ID of the last DM we responded to. */
-  var last_dm_id = getLastDmId();
-  if (last_dm_id == undefined) {
-    handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
-    last_dm_id = 0;
-  }
-
-  T.get("direct_messages", { since_id: last_dm_id, count: 200 }, function(
-    err,
-    dms,
-    response
-  ) {
-    /* Next, let's DM's to our bot, starting after the last DM we responded to. */
-    if (dms.length) {
-      dms.forEach(function(dm) {
-        log.debug(
-          `Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`
-        );
-
-        /* Now we can respond to each tweet. */
-        T.post(
-          "direct_messages/new",
-          {
-            user_id: dm.sender_id,
-            text: "This is a test response."
-          },
-          function(err, data, response) {
-            if (err) {
-              /* TODO: Proper error handling? */
-              handleError(err);
-            } else {
-              setLastDmId(dm.id_str);
-            }
-          }
-        );
-      });
-    } else {
-      /* No new DMs since the last time we checked. */
-      log.debug("No new DMs...");
+    /* First, let's load the ID of the last tweet we responded to. */
+    var last_mention_id = 
+        maxTweetIdRead = getLastMentionId();
+    
+    var tweet_promises = [];
+    if (!last_mention_id) {
+      handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
     }
-  });
+      var mentions_promise = new Promise( (resolve, reject) => {
+      /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
+      T.get(
+        "search/tweets",
+        {
+          q: "%40" + process.env.TWITTER_HANDLE,
+          since_id: last_mention_id,
+          tweet_mode: "extended"
+        },
+        function(err, data, response) {
+          if (err) {
+            handleError(err);
+            return false;
+          }
 
-  /* TODO: Handle proper responses based on whether the tweets succeed, using Promises. For now, let's just return a success message no matter what. */
-  response.sendStatus(200);
+          debugger;
+          if (data.statuses.length) {
+            var request_records = [];
+
+            /* 
+            Iterate over each tweet. 
+
+            The replies can occur concurrently, but the threaded replies to each tweet must, 
+            within that thread, execute sequentially. 
+
+            Since each tweet with a mention is processed in parallel, keep track of largest ID
+            and write that at the end.
+            */
+            data.statuses.forEach(function(status) {
+              debugger;
+              log.debug(`Found ${printTweet(status)}`);
+
+              if (maxTweetIdRead < status.id_str) {
+                maxTweetIdRead = status.id_str;
+              }
+
+              /*
+              Make sure this isn't a reply to one of the bot's tweets which would
+              include the bot screen name in full_text, but only due to replies.
+              */
+              const { chomped, chomped_text } = chompTweet(status);
+
+              if (!chomped || botScreenNameRegexp.test(chomped_text)) {
+                /* Don't reply to retweet or our own tweets. */
+                if (status.hasOwnProperty("retweet_status")) {
+                  log.debug(`Ignoring retweet: ${status.full_text}`);
+                } else if (status.user.id == app_id) {
+                  log.debug("Ignoring our own tweet: " + status.full_text);
+                } else {
+                  const { state, plate } = parseTweet(chomped_text);
+                  var now = new Date().valueOf();
+                  var item = {
+                    PutRequest: {
+                      Item: {
+                        id: uuidv1(),
+                        license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
+                        created: now,
+                        modified: now,
+                        processing_status: "UNPROCESSED",
+                        tweet_id: status.id,
+                        tweet_id_str: status.id_str,
+                        tweet_user_id: status.user.id,
+                        tweet_user_id_str: status.user.id_str,
+                        tweet_user_screen_name: status.user.screen_name
+                      }
+                    }
+                  };
+
+                  request_records.push(item);
+                }
+                
+                debugger;
+              } else {
+                log.debug(
+                  "Ignoring reply that didn't actually reference bot: " +
+                    status.full_text
+                );
+              }
+              
+              
+              debugger;
+              twitter_promises.push(batchWriteWithExponentialBackoff(tableNames["Request"], request_records));
+            });
+            
+          } else {
+            /* No new mentions since the last time we checked. */
+            log.debug("No new mentions...");
+          }
+          
+          Promise.all(twitter_promises).then( () => {
+            // Update the ids of the last tweet/dm if we processed
+            // anything with larger ids.
+            if (maxTweetIdRead > last_mention_id) {
+              log.info(`Setting last_mention_id to ${maxTweetIdRead}`);
+              setLastMentionId(maxTweetIdRead);
+            }
+
+            // resolve the outer promise for processing mentions
+            resolve();
+          }).catch( (err) => {
+            handleError(err);
+          });
+        }
+      );
+    });
+    
+    tweet_promises.push(mentions_promise);
+
+    /* Respond to DMs */
+    /* Load the ID of the last DM we responded to. */
+    var last_dm_id = 
+        maxDmIdRead = getLastDmId();
+
+    if (!last_dm_id) {
+      handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
+    }
+
+    var dm_promise = new Promise( (resolve, reject) => {
+    T.get("direct_messages", { since_id: last_dm_id, count: 200 }, function(
+      err,
+      dms,
+      response
+    ) {
+      /* Next, let's DM's to our bot, starting after the last DM we responded to. */
+      var dm_post_promises = [];
+      if (dms.length) {
+        
+        dms.forEach(function(dm) {
+          log.debug(
+            `Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`
+          );
+
+          /* Now we can respond to each tweet. */
+          var dm_post_promise = new Promise( (resolve, reject) => {
+          T.post(
+            "direct_messages/new",
+            {
+              user_id: dm.sender_id,
+              text: "This is a test response."
+            },
+            function(err, data, response) {
+              if (err) {
+                /* TODO: Proper error handling? */
+                handleError(err);
+              } else {
+                
+                if (maxDmIdRead < dm.id_str) {
+                  maxDmIdRead = dm.id_str;
+                }
+                
+                // TODO: Implement this.
+                resolve();
+              }
+            }
+          );
+          });
+          
+          dm_post_promises.push(dm_post_promise);
+        });
+        
+      } else {
+        /* No new DMs since the last time we checked. */
+        log.debug("No new DMs...");
+      }
+      
+      debugger;
+      Promise.all(dm_post_promises).then( () => {
+        // resolve the outer promise for all dm's
+        resolve();
+      }).catch( (err) => {
+        handleError(err);
+      })
+    });
+    });
+    
+    tweet_promises.push(dm_promise);
+
+    debugger;
+    // Now wait until processing of both tweets and dms is done.
+    Promise.all(tweet_promises).then( () => {
+      // Update the ids of the last tweet/dm if we processed
+      // anything with larger ids.
+      if (maxTweetIdRead > last_mention_id) {
+        log.debug(`Setting last_mention_id to ${maxTweetIdRead}`);
+        setLastMentionId(maxTweetIdRead);
+      }
+      
+      if (maxDmIdRead > last_dm_id) {
+        log.debug(`Setting last_dm_id to ${maxDmIdRead}`);
+        setLastDmId(maxDmIdRead);
+      }
+      response.sendStatus(200);
+    }).catch( (err) => {
+      response.status(500).send(err);
+    });
+  } catch ( err ) {
+    response.status(500).send(err);
+  }
 });
 
 app.all("/test", function(request, response) {
@@ -321,7 +355,6 @@ app.all("/test", function(request, response) {
       if (!failures) {
         response.sendStatus(200);
       } else {
-        // Send back the test results.
         response.status(500).send(test_results);
       }
     });
@@ -338,24 +371,32 @@ app.all("/dumpfile", function(request, response) {
 });
 
 app.all("/dumptweet", function(request, response) {
-  if (request.query.hasOwnProperty("id")) {
-    var tweet = getTweetById(request.query.id);
-    response.set("Cache-Control", "no-store");
-    response.json(tweet);
-  } else {
-    handleError(new Error("Error: id is required for /dumptweet"));
+  try {
+    if (request.query.hasOwnProperty("id")) {
+      var tweet = getTweetById(request.query.id);
+      response.set("Cache-Control", "no-store");
+      response.json(tweet);
+    } else {
+      handleError(new Error("Error: id is required for /dumptweet"));
+    }
+  } catch ( err ) {
+    response.status(500).send(err);
   }
 });
 
 app.all("/dumpcitations", function(request, response) {
-  var state = "WA";
-  var plate = "334XYB";
+  try {
+  var state;
+  var plate;
   if (
     request.query.hasOwnProperty("state") &&
     request.query.hasOwnProperty("plate")
   ) {
     state = request.query.state;
     plate = request.query.plate;
+  }
+  else {
+    throw new Error("state and plate query string parameters are required.")
   }
 
   seattle
@@ -373,138 +414,59 @@ app.all("/dumpcitations", function(request, response) {
     .catch(function(err) {
       handleError(err);
     });
-
-  response.sendStatus(200);
+  }
+  catch ( err ) {
+    response.status(500).send(err);
+  }
 });
 
 app.all("/errors", function(request, response) {
-  var fileName = `${__dirname}/log/err.log`;
+  try {
+    var fileName = `${__dirname}/log/err.log`;
 
-  log.info(`Sending file: ${fileName}.`);
-  response.sendFile(fileName);
+    log.info(`Sending file: ${fileName}.`);
+    response.sendFile(fileName);
+  }
+  catch ( err ) {
+    response.status(500).send(err);
+  }
 });
 
 // uptimerobot.com hits this every 5 minutes
 app.all("/processrequests", function(request, response) {
-  var docClient = new AWS.DynamoDB.DocumentClient();
+  try {
+    var docClient = new AWS.DynamoDB.DocumentClient();
 
-  GetRequestRecords()
-    .then(request_records => {
-      if (request_records && request_records.length > 0) {
-        request_records.forEach(function(item) {
-          var citation_records = [];
-          var tokens = item.license.split(":");
-          var state;
-          var plate;
+    GetRequestRecords()
+      .then(request_records => {
+        var request_promises = [];
+      
+        if (request_records && request_records.length > 0) {
+          request_records.forEach( (item) => {
+            var batch_write_promises = [];
+            var citation_records = [];
+            var tokens = item.license.split(":");
+            var state;
+            var plate;
 
-          if (tokens.length == 2) {
-            state = tokens[0];
-            plate = tokens[1];
-          }
-
-          if (state == null || state == "" || plate == null || plate == "") {
-            log.warn(
-              `Not a valid state/plate in this request (${state}/${plate}).`
-            );
-            // There was no valid plate found in the tweet. Add a dummy citation.
-            var now = new Date().valueOf();
-            var citation = {
-              id: uuidv1(),
-              Citation: seattle.CitationIDNoPlateFound,
-              processing_status: "UNPROCESSED",
-              license: item.license,
-              request_id: item.id,
-              created: now,
-              modified: now,
-              tweet_id: item.tweet_id,
-              tweet_id_str: item.tweet_id_str,
-              tweet_user_id: item.tweet_user_id,
-              tweet_user_id_str: item.tweet_user_id_str,
-              tweet_user_screen_name: item.tweet_user_screen_name
-            };
-
-            citation_records.push({
-              PutRequest: {
-                Item: citation
-              }
-            });
-
-            // Write the citations to DB
-            // DynamoDB batchWrite only supports up to 25 items
-            var startPos = 0;
-            var endPos;
-            var batchWritePromises = [];
-            while (startPos < citation_records.length) {
-              endPos = startPos + 25;
-              if (endPos > citation_records.length) {
-                endPos = citation_records.length;
-              }
-
-              let params = {
-                RequestItems: {
-                  [`${tableNames["Citations"]}`]: citation_records.slice(
-                    startPos,
-                    endPos
-                  )
-                }
-              };
-
-              var batchWritePromise = new Promise((resolve, reject) => {
-                docClient.batchWrite(params, function(err, data) {
-                  if (err) {
-                    handleError(err);
-                  }
-
-                  // TODO: Handle data.UnprocessedItems
-                  resolve(data);
-                });
-              });
-
-              batchWritePromises.push(batchWritePromise);
-
-              startPos = endPos;
+            if (tokens.length == 2) {
+              state = tokens[0];
+              plate = tokens[1];
             }
-
-            // Wait for all the citation writes to complete to
-            // ensure we don't update the request in the case
-            // where one or more of these writes failed.
-            Promise.all(batchWritePromises)
-              .then(function(results) {
-                var params = {
-                  TableName: tableNames["Request"],
-                  Key: {
-                    id: item.id
-                  },
-                  AttributeUpdates: {
-                    processing_status: {
-                      Action: "PUT",
-                      Value: "PROCESSED"
-                    },
-                    modified: {
-                      Action: "PUT",
-                      Value: new Date().valueOf()
-                    }
-                  }
-                };
-
-                docClient.update(params, function(err, data) {
-                  if (err) {
-                    handleError(err);
-                  }
-                });
-              })
-              .catch(function(e) {
-                handleError(e);
-              });
-          } else {
-            seattle.GetCitationsByPlate(plate, state).then(function(citations) {
-              if (!citations || citations.length == 0) {
+            
+            var request_promise = new Promise( (resolve, reject) => {
+              if (state == null || state == "" || plate == null || plate == "") {
+                log.warn(
+                  `Not a valid state/plate in this request (${state}/${plate}).`
+                );
+                // There was no valid plate found in the tweet. Add a dummy citation.
+                var now = new Date().valueOf();
                 var citation = {
                   id: uuidv1(),
-                  Citation: seattle.CitationIDNoCitationsFound,
-                  request_id: item.id,
+                  Citation: seattle.CitationIDNoPlateFound,
                   processing_status: "UNPROCESSED",
                   license: item.license,
+                  request_id: item.id,
                   created: now,
                   modified: now,
                   tweet_id: item.tweet_id,
@@ -514,231 +476,251 @@ app.all("/processrequests", function(request, response) {
                   tweet_user_screen_name: item.tweet_user_screen_name
                 };
 
-                // DynamoDB does not allow any property to be null or empty string.
-                // Set these values to 'None'.
-                mungeCitation(citation);
-
                 citation_records.push({
                   PutRequest: {
                     Item: citation
                   }
                 });
+
+                batchWriteWithExponentialBackoff(
+                  tableNames["Citations"],
+                  citation_records
+                ).then(() => {
+                      var params = {
+                        TableName: tableNames["Request"],
+                        Key: {
+                          id: item.id
+                        },
+                        AttributeUpdates: {
+                          processing_status: {
+                            Action: "PUT",
+                            Value: "PROCESSED"
+                          },
+                          modified: {
+                            Action: "PUT",
+                            Value: new Date().valueOf()
+                          }
+                        }
+                      };
+
+                      docClient.update(params, function(err, data) {
+                        if (err) {
+                          handleError(err);
+                        }
+
+                        // resolve the promise
+                      });
+                    })
+                    .catch(function(e) {
+                      handleError(e);
+                    });
               } else {
-                citations.forEach(citation => {
-                  var now = new Date().valueOf();
+                seattle.GetCitationsByPlate(plate, state).then(function(citations) {
+                  if (!citations || citations.length == 0) {
+                    var citation = {
+                      id: uuidv1(),
+                      Citation: seattle.CitationIDNoCitationsFound,
+                      request_id: item.id,
+                      processing_status: "UNPROCESSED",
+                      license: item.license,
+                      created: now,
+                      modified: now,
+                      tweet_id: item.tweet_id,
+                      tweet_id_str: item.tweet_id_str,
+                      tweet_user_id: item.tweet_user_id,
+                      tweet_user_id_str: item.tweet_user_id_str,
+                      tweet_user_screen_name: item.tweet_user_screen_name
+                    };
 
-                  citation.id = uuidv1();
-                  citation.request_id = item.id;
-                  citation.processing_status = "UNPROCESSED";
-                  citation.license = item.license;
-                  citation.created = now;
-                  citation.modified = now;
-                  citation.tweet_id = item.tweet_id;
-                  citation.tweet_id_str = item.tweet_id_str;
-                  citation.tweet_user_id = item.tweet_user_id;
-                  citation.tweet_user_id_str = item.tweet_user_id_str;
-                  citation.tweet_user_screen_name = item.tweet_user_screen_name;
+                    // DynamoDB does not allow any property to be null or empty string.
+                    // Set these values to 'None'.
+                    mungeCitation(citation);
 
-                  // DynamoDB does not allow any property to be null or empty string.
-                  // Set these values to 'None'.
-                  mungeCitation(citation);
-
-                  citation_records.push({
-                    PutRequest: {
-                      Item: citation
-                    }
-                  });
-                });
-              }
-
-              // Write the citations to DB
-              // DynamoDB batchWrite only supports up to 25 items
-              var startPos = 0;
-              var endPos;
-              var batchWritePromises = [];
-              while (startPos < citation_records.length) {
-                endPos = startPos + 25;
-                if (endPos > citation_records.length) {
-                  endPos = citation_records.length;
-                }
-
-                let params = {
-                  RequestItems: {
-                    [`${tableNames["Citations"]}`]: citation_records.slice(
-                      startPos,
-                      endPos
-                    )
-                  }
-                };
-
-                var batchWritePromise = new Promise((resolve, reject) => {
-                  docClient.batchWrite(params, function(err, data) {
-                    if (err) {
-                      handleError(err);
-                    }
-
-                    // TODO: Handle data.UnprocessedItems
-                    resolve(data);
-                  });
-                });
-
-                batchWritePromises.push(batchWritePromise);
-
-                startPos = endPos;
-              }
-
-              // Wait for all the citation writes to complete to
-              // ensure we don't update the request in the case
-              // where one or more of these writes failed.
-              Promise.all(batchWritePromises)
-                .then(function(results) {
-                  var params = {
-                    TableName: tableNames["Request"],
-                    Key: {
-                      id: item.id
-                    },
-                    AttributeUpdates: {
-                      processing_status: {
-                        Action: "PUT",
-                        Value: "PROCESSED"
-                      },
-                      modified: {
-                        Action: "PUT",
-                        Value: new Date().valueOf()
+                    citation_records.push({
+                      PutRequest: {
+                        Item: citation
                       }
-                    }
-                  };
+                    });
+                  } else {
+                    citations.forEach(citation => {
+                      var now = new Date().valueOf();
 
-                  docClient.update(params, function(err, data) {
-                    if (err) {
-                      handleError(err);
-                    }
+                      citation.id = uuidv1();
+                      citation.request_id = item.id;
+                      citation.processing_status = "UNPROCESSED";
+                      citation.license = item.license;
+                      citation.created = now;
+                      citation.modified = now;
+                      citation.tweet_id = item.tweet_id;
+                      citation.tweet_id_str = item.tweet_id_str;
+                      citation.tweet_user_id = item.tweet_user_id;
+                      citation.tweet_user_id_str = item.tweet_user_id_str;
+                      citation.tweet_user_screen_name = item.tweet_user_screen_name;
+
+                      // DynamoDB does not allow any property to be null or empty string.
+                      // Set these values to 'None'.
+                      mungeCitation(citation);
+
+                      citation_records.push({
+                        PutRequest: {
+                          Item: citation
+                        }
+                      });
+                    });
+                  }
+                  
+                  batchWriteWithExponentialBackoff(tableNames["Citations"], citation_records).then ( () => {
+                    var params = {
+                      TableName: tableNames["Request"],
+                      Key: {
+                        id: item.id
+                      },
+                      AttributeUpdates: {
+                        processing_status: {
+                          Action: "PUT",
+                          Value: "PROCESSED"
+                        },
+                        modified: {
+                          Action: "PUT",
+                          Value: new Date().valueOf()
+                        }
+                      }
+                    };
+
+                    // What happens if update gets throttled?
+                    // I don't see any info on that. Does that mean it doesn't?
+                    // It just succeeds or fails?
+                    docClient.update(params, function(err, data) {
+                      if (err) {
+                        handleError(err);
+                      }
+                      
+                      // OK this is the success point for processing this reqeuest.
+                      // Resolve the Promise we are in.
+                      resolve();
+                    });
+                  }).catch( (err) => {
+                    handleError(err);
                   });
-                })
-                .catch(function(e) {
-                  handleError(e);
                 });
+              }
             });
-          }
-        });
-      } else {
-        log.debug("No request records found.");
-      }
+            
+            request_promises.push(request_promise);
+          });
+        } else {
+          log.debug("No request records found.");
+        }
+      
+      Promise.all(request_promises).then( () => {
+        // This is the only success. Every other codepath represents a failure.
+        response.sendStatus(200);
+      }).catch( (err) => {
+        handleError(err);
+      })
     })
     .catch(err => {
       handleError(err);
     });
-  response.sendStatus(200);
+  }
+  catch ( err ) {
+    response.status(500).send(err);
+  }
+
+  log.debug("Finished kicking off the tweet handling process.");
 });
 
 app.all("/processcitations", function(request, response) {
-  var docClient = new AWS.DynamoDB.DocumentClient();
+  try {
+    var docClient = new AWS.DynamoDB.DocumentClient();
 
-  GetCitationRecords().then(function(citations) {
-    if (citations && citations.length > 0) {
-      var citationsByRequest = {};
+    GetCitationRecords().then(function(citations) {
+      var request_promises = [];
       
-      log.info(`Found ${citations.length} citation records.`);
+      if (citations && citations.length > 0) {
+        var citationsByRequest = {};
 
-      // Sort them based on request
-      citations.forEach(function(citation) {
-        if (!(citation.request_id in citationsByRequest)) {
-          citationsByRequest[citation.request_id] = new Array();
-        }
+        log.debug(`Found ${citations.length} citation records.`);
 
-        citationsByRequest[citation.request_id].push(citation);
-      });
+        // Sort them based on request
+        citations.forEach(function(citation) {
+          if (!(citation.request_id in citationsByRequest)) {
+            citationsByRequest[citation.request_id] = new Array();
+          }
 
-      // Now process the citations, on a per-request basis
-      Object.keys(citationsByRequest).forEach(function(request_id) {
-        // Get the first citation to access citation columns
-        var citation = citationsByRequest[request_id][0];
-        seattle
-          .ProcessCitationsForRequest(citationsByRequest[request_id])
-          .then(report_items => {
+          citationsByRequest[citation.request_id].push(citation);
+        });
+        
+        var request_promises = [];
 
-            // Write report items
-            WriteReportItemRecords(request_id, citation, report_items)
-              .then(function(results) {
-                // Set the processing status of all the citations
-                // DynamoDB has no way to do a bulk update of items based on a query
-                // of an index which is in the WFT?! bucket. But here we are.
-                // Build an explicit update.
-                // Write the tweets to the db
-                // DynamoDB batchWrite only supports up to 25 items
-                var citation_records = [];
-                var now = new Date().valueOf();
+        // Now process the citations, on a per-request basis
+        Object.keys(citationsByRequest).forEach(function(request_id) {
+          var request_promise = new Promise( (resolve, reject) => {  
+            // Get the first citation to access citation columns
+            var citation = citationsByRequest[request_id][0];
+            seattle
+              .ProcessCitationsForRequest(citationsByRequest[request_id])
+              .then(report_items => {
+                // Write report items
+                WriteReportItemRecords(request_id, citation, report_items)
+                  .then(function(results) {
+                    // Set the processing status of all the citations
+                    var citation_records = [];
+                    var now = new Date().valueOf();
 
-                citationsByRequest[request_id].forEach(citation => {
-                  citation.processing_status = "PROCESSED";
-                  citation.modified = now;
+                    citationsByRequest[request_id].forEach(citation => {
+                      citation.processing_status = "PROCESSED";
+                      citation.modified = now;
 
-                  citation_records.push({
-                    PutRequest: {
-                      Item: citation
-                    }
-                  });
-                });
+                      citation_records.push({
+                        PutRequest: {
+                          Item: citation
+                        }
+                      });
+                    });
 
-                var startPos = 0;
-                var endPos;
-
-                var batchWritePromises = [];
-                while (startPos < citation_records.length) {
-                  endPos = startPos + 25;
-                  if (endPos > citation_records.length) {
-                    endPos = citation_records.length;
-                  }
-
-                  let params = {
-                    RequestItems: {
-                      [`${tableNames["Citations"]}`]: citation_records.slice(
-                        startPos,
-                        endPos
-                      )
-                    }
-                  };
-
-                  // Let this go asynchronously.
-                  var batchWritePromise = docClient.batchWrite(params, function(
-                    err,
-                    data
-                  ) {
-                    if (err) {
+                    batchWriteWithExponentialBackoff(tableNames["Citations"], citation_records).then( () => {
+                      // This is the one success point for this request.
+                      // All other codepaths indicate a failure.
+                      resolve();
+                    }).catch ( (err) => {
                       handleError(err);
-                    }
-                  });
+                    });
 
-                  batchWritePromises.push(batchWritePromise);
-
-                  startPos = endPos;
-                }
-
-                // Wait for all the batchWrite operations to succeed.
-                Promise.all(batchWritePromises)
-                  .then(function(results) {})
-                  .catch(function(err) {
-                    handleError(err);
+                  })
+                  .catch(function(e) {
+                    handleError(e);
                   });
               })
-              .catch(function(e) {
+              .catch(e => {
                 handleError(e);
               });
-          })
-          .catch(e => {
-            handleError(e);
           });
-      });
-    } else {
-      log.debug("No citations found.");
-    }
 
-    response.sendStatus(200);
-  });
+          request_promises.push(request_promise);
+        });
+      } else {
+        log.debug("No citations found.");
+      }
+      
+      Promise.all(request_promises).then( () => {
+        // This is the one success point for all citations being processed.
+        // Every other codepath is a failure of some kind.
+        response.sendStatus(200);
+      }).catch( (err) => {
+        handleError(err);
+      });
+    });
+  } catch (err) {
+    response.status(500).send(err);
+  }
+  
+  log.debug("Finished kicking off the processing of citations.");
 });
 
 app.all("/processreportitems", function(request, response) {
   var docClient = new AWS.DynamoDB.DocumentClient();
+  var request_promises = [];
 
   GetReportItemRecords()
     .then(function(report_items) {
@@ -766,6 +748,7 @@ app.all("/processreportitems", function(request, response) {
 
         // Now process the report_items, on a per-request basis
         Object.keys(reportItemsByRequest).forEach(request_id => {
+          var request_promise = new Promise( (resolve, reject) => {
           // Get the first report_item to access report_item columns
           var report_item = reportItemsByRequest[request_id][0];
           // Build a fake tweet for the request report_item
@@ -781,11 +764,6 @@ app.all("/processreportitems", function(request, response) {
           SendResponses(origTweet, reportItemsByRequest[request_id])
             .then(() => {
               // Set the processing status of all the report_items
-              // DynamoDB has no way to do a bulk update of items based on a query
-              // of an index which is in the WFT?! bucket. But here we are.
-              // Build an explicit update.
-              // Write the report_items to the db
-              // DynamoDB batchWrite only supports up to 25 items
               var report_item_records = [];
               var now = new Date().valueOf();
 
@@ -799,62 +777,73 @@ app.all("/processreportitems", function(request, response) {
                   }
                 });
               });
-
-              var startPos = 0;
-              var endPos;
-
-              var batchWritePromises = [];
-              while (startPos < report_item_records.length) {
-                endPos = startPos + 25;
-                if (endPos > report_item_records.length) {
-                  endPos = report_item_records.length;
-                }
-
-                let params = {
-                  RequestItems: {
-                    [`${tableNames["ReportItems"]}`]: report_item_records.slice(
-                      startPos,
-                      endPos
-                    )
-                  }
-                };
-
-                // Do the updates in batches of 25.
-                var batchWritePromise = docClient.batchWrite(params, function(
-                  err,
-                  data
-                ) {
-                  if (err) {
-                    handleError(err);
-                  }
-                });
-
-                batchWritePromises.push(batchWritePromise);
-
-                startPos = endPos;
-              }
-
-              // Wait for all the batchWrite operations to succeed.
-              Promise.all(batchWritePromises)
-                .then(function(results) {})
-                .catch(function(err) {
-                  handleError(err);
-                });
+            
+              batchWriteWithExponentialBackoff(tableNames["ReportItems"], report_item_records).then( () => {
+                // This is the one and only success point for these report item records.
+                // Every other codepath is an error of some kind.
+                resolve();
+              }).catch( (err) => {
+                handleError(err);
+              });
             })
             .catch(err => {
               handleError(err);
             });
         });
+          
+          request_promises.push(request_promise);
+        });
       } else {
         log.debug("No report items found.");
       }
-    })
-    .catch(function(err) {
+    
+    Promise.all(request_promises).then( () => {
+      // Tweets for all the requests have completed successfully
+        response.sendStatus(200);
+    }).catch( (err) => {
       handleError(err);
     });
-
-  response.sendStatus(200);
+    })
+    .catch(function(err) {
+      response.status(500).send(err);
+    });
+  
+  log.debug("Finished kicking of processing of report items.");
 });
+
+function batchWriteWithExponentialBackoff(table, records) {
+  
+  return new Promise( (resolve, reject) => {
+    var qdb = queue();
+    
+    qdb.drain = () => {
+      resolve();
+    };
+    
+    qdb.error = (err, task) => {
+      reject(err);
+    };
+
+    var startPos = 0;
+    var endPos;
+    while (startPos < records.length) {
+      endPos = startPos + 25;
+      if (endPos > records.length) {
+        endPos = records.length;
+      }
+
+      let params = {
+        RequestItems: {
+          [`${table}`]: records.slice(startPos, endPos)
+        }
+      };
+
+      qdb.push(params);
+
+      startPos = endPos;
+    }
+  })
+}
 
 function chompTweet(tweet) {
   // Extended tweet objects include the screen name of the tweeting user within the full_text,
@@ -1007,6 +996,7 @@ function SendResponses(origTweet, report_items) {
             // the local Promise.
             SendResponses(data, report_items_clone)
               .then(tweet => {
+                log.debug(`Finished sending ${report_items_clone.length} tweets.`);
                 resolve(data);
               })
               .catch(err => {
@@ -1152,6 +1142,7 @@ function handleError(error) {
   var formattedError = `===============================================================================\n${error.message}\n${stacktrace}`;
 
   log.error(formattedError);
+  throw error;
 }
 
 function logTweetById(id) {
@@ -1439,43 +1430,8 @@ function WriteReportItemRecords(request_id, citation, report_items) {
     report_item_records.push(item);
   });
 
-  // 3. Write the report item records. DynamoDB batchWrite only supports up to 25 items at a time.
-  var startPos = 0;
-  var endPos;
-  var batchWritePromises = [];
-  while (startPos < report_item_records.length) {
-    endPos = startPos + 25;
-    if (endPos > report_item_records.length) {
-      endPos = report_item_records.length;
-    }
-
-    let params = {
-      RequestItems: {
-        [`${tableNames["ReportItems"]}`]: report_item_records.slice(
-          startPos,
-          endPos
-        )
-      }
-    };
-
-    var batchWritePromise = new Promise((resolve, reject) => {
-      docClient.batchWrite(params, function(err, data) {
-        if (err) {
-          handleError(err);
-        }
-
-        // TODO: Handle data.UnprocessedItems
-        resolve(data);
-      });
-    });
-
-    batchWritePromises.push(batchWritePromise);
-
-    startPos = endPos;
-  }
-
-  // 4. Wait for all the report item writes to complete.
-  return Promise.all(batchWritePromises);
+  // 3. Write the report item records, returning that Promise. 
+  return batchWriteWithExponentialBackoff(tableNames["ReportItems"], report_item_records);
 }
 
 /*

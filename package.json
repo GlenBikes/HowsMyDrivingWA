@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "aws-sdk": "*",
+    "backoff": "^2.5.0",
+    "dynamo-batchwrite-queue": "^1.0.1",
     "express": "^4.14.0",
     "interface.js": "^2.0.0",
     "json2html": "*",
