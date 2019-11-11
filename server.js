@@ -200,7 +200,6 @@ app.all("/tweet", function(request, response) {
             // Update the ids of the last tweet/dm if we processed
             // anything with larger ids.
             if (maxTweetIdRead > last_mention_id) {
-              log.info(`Setting last_mention_id to ${maxTweetIdRead}`);
               setLastMentionId(maxTweetIdRead);
             }
 
@@ -290,12 +289,10 @@ app.all("/tweet", function(request, response) {
       // Update the ids of the last tweet/dm if we processed
       // anything with larger ids.
       if (maxTweetIdRead > last_mention_id) {
-        log.debug(`Setting last_mention_id to ${maxTweetIdRead}`);
         setLastMentionId(maxTweetIdRead);
       }
       
       if (maxDmIdRead > last_dm_id) {
-        log.debug(`Setting last_dm_id to ${maxDmIdRead}`);
         setLastDmId(maxDmIdRead);
       }
       response.sendStatus(200);
@@ -461,6 +458,8 @@ app.all("/processrequests", function(request, response) {
                 );
                 // There was no valid plate found in the tweet. Add a dummy citation.
                 var now = new Date().valueOf();
+                // TTL is 10 years from now until the records are PROCESSED
+                var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
                 var citation = {
                   id: uuidv1(),
                   Citation: seattle.CitationIDNoPlateFound,
@@ -469,6 +468,7 @@ app.all("/processrequests", function(request, response) {
                   request_id: item.id,
                   created: now,
                   modified: now,
+                  ttl_expire: ttl_expire,
                   tweet_id: item.tweet_id,
                   tweet_id_str: item.tweet_id_str,
                   tweet_user_id: item.tweet_user_id,
@@ -517,6 +517,10 @@ app.all("/processrequests", function(request, response) {
               } else {
                 seattle.GetCitationsByPlate(plate, state).then(function(citations) {
                   if (!citations || citations.length == 0) {
+                    var now = new Date().valueOf();
+                    // TTL is 10 years from now until the records are PROCESSED
+                    var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
+
                     var citation = {
                       id: uuidv1(),
                       Citation: seattle.CitationIDNoCitationsFound,
@@ -525,6 +529,7 @@ app.all("/processrequests", function(request, response) {
                       license: item.license,
                       created: now,
                       modified: now,
+                      ttl_expire: ttl_expire,
                       tweet_id: item.tweet_id,
                       tweet_id_str: item.tweet_id_str,
                       tweet_user_id: item.tweet_user_id,
@@ -544,6 +549,8 @@ app.all("/processrequests", function(request, response) {
                   } else {
                     citations.forEach(citation => {
                       var now = new Date().valueOf();
+                      // TTL is 10 years from now until the records are PROCESSED
+                      var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
 
                       citation.id = uuidv1();
                       citation.request_id = item.id;
@@ -551,6 +558,7 @@ app.all("/processrequests", function(request, response) {
                       citation.license = item.license;
                       citation.created = now;
                       citation.modified = now;
+                      citation.ttl_expire = ttl_expire;
                       citation.tweet_id = item.tweet_id;
                       citation.tweet_id_str = item.tweet_id_str;
                       citation.tweet_user_id = item.tweet_user_id;
@@ -667,10 +675,13 @@ app.all("/processcitations", function(request, response) {
                     // Set the processing status of all the citations
                     var citation_records = [];
                     var now = new Date().valueOf();
+                    // Now that the record is PROCESSED, TTL is 1 month 
+                    var ttl_expire = new Date().setMonth(new Date().getMonth() + 1);
 
                     citationsByRequest[request_id].forEach(citation => {
                       citation.processing_status = "PROCESSED";
                       citation.modified = now;
+                      citation.ttl_expire = ttl_expire;
 
                       citation_records.push({
                         PutRequest: {
@@ -766,10 +777,13 @@ app.all("/processreportitems", function(request, response) {
               // Set the processing status of all the report_items
               var report_item_records = [];
               var now = new Date().valueOf();
+              // Now that the record is PROCESSED, TTL is 1 month 
+              var ttl_expire = new Date().setMonth(new Date().getMonth() + 1)
 
               reportItemsByRequest[request_id].forEach(report_item => {
                 report_item.processing_status = "PROCESSED";
                 report_item.modified = now;
+                report_item.ttl_expire = ttl_expire;
 
                 report_item_records.push({
                   PutRequest: {
@@ -1403,6 +1417,8 @@ function WriteReportItemRecords(request_id, citation, report_items) {
 
   // 2. Build the report item records
   var now = new Date().valueOf();
+  // TTL is 10 years from now until the records are PROCESSED
+  var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
   var report_item_records = [];
   var record_num = 0;
 
@@ -1415,6 +1431,7 @@ function WriteReportItemRecords(request_id, citation, report_items) {
           record_num: record_num++,
           created: now,
           modified: now,
+          ttl_expire: ttl_expire,
           processing_status: "UNPROCESSED",
           license: citation.lencense,
           tweet_id: citation.tweet_id,
