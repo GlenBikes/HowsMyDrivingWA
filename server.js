@@ -507,8 +507,7 @@ app.all("/processrequests", function(request, response) {
                         if (err) {
                           handleError(err);
                         }
-
-                        // resolve the promise
+                        resolve();
                       });
                     })
                     .catch(function(e) {
@@ -1114,13 +1113,11 @@ function getLastMentionId() {
 }
 
 function setLastDmId(lastDmId) {
-  log.debug(`Writing last dm id ${lastDmId}.`);
   lastdmLog.info(`Writing last dm id ${lastDmId}.`);
   localStorage.setItem('lastdm', lastDmId);
 }
 
 function setLastMentionId(lastMentionId) {
-  log.debug(`Writing last mention id ${lastMentionId}.`);
   lastmentionLog.info(`Writing last mention id ${lastMentionId}.`);
   localStorage.setItem('lastmention', lastMentionId);
 }
