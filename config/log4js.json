@@ -4,15 +4,13 @@
         "type": "file",
         "filename": "log/_last_mention_id.txt",
         "maxLogSize": 1024,
-        "numBackups": 2,
-        "keepFileExt": true
+        "numBackups": 2
       },
       "lastdm": {
         "type": "file",
         "filename": "log/_last_dm_id.txt",
         "maxLogSize": 1024,
-        "numBackups": 2,
-        "keepFileExt": true
+        "numBackups": 2
       },
       "out": { 
         "type": "console" 
@@ -21,15 +19,13 @@
         "type": "file",
         "filename": "log/app.log",
         "maxLogSize": 1048576,
-        "numBackups": 2,
-        "keepFileExt": true
+        "numBackups": 2
       },
       "err": {
         "type": "file",
         "filename": "log/err.log",
         "maxLogSize": 1048576,
-        "numBackups": 2,
-        "keepFileExt": true
+        "numBackups": 2
       },
       "errors": {
         "type": "logLevelFilter",
