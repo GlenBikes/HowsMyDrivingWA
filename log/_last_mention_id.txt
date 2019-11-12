@@ -1,0 +1,1 @@
+[2019-11-12T00:20:02.305] [INFO] lastmention - Writing last mention id 1.
