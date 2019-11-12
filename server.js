@@ -32,7 +32,7 @@ var app = express(),
   T = new Twit(config.twitter);
 
 // Local storage to keep track of our last processed tweet/dm
-var localStorage = new LocalStorage('./_localstore.txt');
+var localStorage = new LocalStorage('./.localstore');
 
 // Log files
 log4js.configure('config/log4js.json');
