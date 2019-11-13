@@ -37,8 +37,8 @@ var localStorage = new LocalStorage('./.localstore');
 // Log files
 log4js.configure('config/log4js.json');
 var log = log4js.getLogger(),
-    lastdmLog = log4js.getLogger("lastdm"),
-    lastmentionLog = log4js.getLogger("lastmention");
+    lastdmLog = log4js.getLogger("_lastdm"),
+    lastmentionLog = log4js.getLogger("_lastmention");
 
 const MAX_RECORDS_BATCH = 2000,
   INTER_TWEET_DELAY_MS =
@@ -222,14 +222,15 @@ app.all("/tweet", function(request, response) {
     if (!last_dm_id) {
       handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
     }
-
+    
+    /*
     var dm_promise = new Promise( (resolve, reject) => {
     T.get("direct_messages", { since_id: last_dm_id, count: 200 }, function(
       err,
       dms,
       response
     ) {
-      /* Next, let's DM's to our bot, starting after the last DM we responded to. */
+      // Next, let's DM's to our bot, starting after the last DM we responded to.
       var dm_post_promises = [];
       if (dms.length) {
         
@@ -238,7 +239,7 @@ app.all("/tweet", function(request, response) {
             `Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`
           );
 
-          /* Now we can respond to each tweet. */
+          // Now we can respond to each tweet.
           var dm_post_promise = new Promise( (resolve, reject) => {
           T.post(
             "direct_messages/new",
@@ -248,7 +249,7 @@ app.all("/tweet", function(request, response) {
             },
             function(err, data, response) {
               if (err) {
-                /* TODO: Proper error handling? */
+                // TODO: Proper error handling?
                 handleError(err);
               } else {
                 
@@ -267,7 +268,7 @@ app.all("/tweet", function(request, response) {
         });
         
       } else {
-        /* No new DMs since the last time we checked. */
+        // No new DMs since the last time we checked.
         log.debug("No new DMs...");
       }
       
@@ -282,6 +283,7 @@ app.all("/tweet", function(request, response) {
     });
     
     tweet_promises.push(dm_promise);
+    */
 
     debugger;
     // Now wait until processing of both tweets and dms is done.

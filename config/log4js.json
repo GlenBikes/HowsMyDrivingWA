@@ -12,6 +12,12 @@
         "maxLogSize": 1024,
         "numBackups": 2
       },
+      "stdout": {
+        "type": "stdout"
+      },
+      "stderr": {
+        "type": "stderr"
+      },
       "out": { 
         "type": "console" 
       },
@@ -31,11 +37,16 @@
         "type": "logLevelFilter",
         "level": "ERROR",
         "appender": "err"
+      },
+      "info": {
+        "type": "logLevelFilter",
+        "level": "INFO",
+        "appender": "stdout"
       }
     },
     "categories": {
       "default": { "appenders": [ "app", "out" ], "level": "ALL" },
-      "lastmention": { "appenders": [ "lastmention"], "level": "ALL" },
-      "lastdm": { "appenders": [ "lastdm"], "level": "ALL" }
+      "_lastmention": { "appenders": [ "lastmention", "stdout" ], "level": "ALL" },
+      "_lastdm": { "appenders": [ "lastdm", "stdout"    ], "level": "ALL" }
     }
 }
