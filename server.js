@@ -772,9 +772,11 @@ app.all("/processreportitems", function(request, response) {
             }
           };
 
+          debugger;
           // Send a copy of the report items to SendResponse since we need to
           SendResponses(origTweet, reportItemsByRequest[request_id])
             .then(() => {
+              debugger;
               // Set the processing status of all the report_items
               var report_item_records = [];
               var now = new Date().valueOf();
@@ -998,7 +1000,17 @@ function SendResponses(origTweet, report_items) {
       },
       function(err, data, response) {
         if (err) {
-          handleError(err);
+          debugger;
+          if (err.code == 187) {
+            // This appears to be a "status is a duplicate" error which
+            // means we are trying to resend a tweet we already sent.
+            // Pretend we succeeded.
+            log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
+            resolve();
+            return;
+          } else {
+            handleError(err);
+          }
         } else {
           log.debug(`Sent tweet: ${printTweet(data)}.`);
 
