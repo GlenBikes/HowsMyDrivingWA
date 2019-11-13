@@ -92,7 +92,6 @@ T.get("account/verify_credentials", {}, function(err, data, response) {
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request, response) {
   try {
-    debugger;
     var maxTweetIdRead = -1;
     var maxDmIdRead = -1;
     // Collect promises from these operations so they can go in parallel
@@ -122,7 +121,6 @@ app.all("/tweet", function(request, response) {
             return false;
           }
 
-          debugger;
           if (data.statuses.length) {
             var request_records = [];
 
@@ -136,7 +134,6 @@ app.all("/tweet", function(request, response) {
             and write that at the end.
             */
             data.statuses.forEach(function(status) {
-              debugger;
               log.debug(`Found ${printTweet(status)}`);
 
               if (maxTweetIdRead < status.id_str) {
@@ -177,8 +174,6 @@ app.all("/tweet", function(request, response) {
 
                   request_records.push(item);
                 }
-                
-                debugger;
               } else {
                 log.debug(
                   "Ignoring reply that didn't actually reference bot: " +
@@ -186,8 +181,6 @@ app.all("/tweet", function(request, response) {
                 );
               }
               
-              
-              debugger;
               twitter_promises.push(batchWriteWithExponentialBackoff(tableNames["Request"], request_records));
             });
             
@@ -272,7 +265,6 @@ app.all("/tweet", function(request, response) {
         log.debug("No new DMs...");
       }
       
-      debugger;
       Promise.all(dm_post_promises).then( () => {
         // resolve the outer promise for all dm's
         resolve();
@@ -285,7 +277,6 @@ app.all("/tweet", function(request, response) {
     tweet_promises.push(dm_promise);
     */
 
-    debugger;
     // Now wait until processing of both tweets and dms is done.
     Promise.all(tweet_promises).then( () => {
       // Update the ids of the last tweet/dm if we processed
@@ -998,7 +989,16 @@ function SendResponses(origTweet, report_items) {
       },
       function(err, data, response) {
         if (err) {
-          handleError(err);
+          if (err.code == 187) {
+            // This appears to be a "status is a duplicate" error which
+            // means we are trying to resend a tweet we already sent.
+            // Pretend we succeeded.
+            log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
+            resolve();
+            return;
+          } else {
+            handleError(err);
+          }
         } else {
           log.debug(`Sent tweet: ${printTweet(data)}.`);
 
