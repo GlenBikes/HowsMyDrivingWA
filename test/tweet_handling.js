@@ -1,6 +1,3 @@
-const awsMock = require("aws-sdk-mock"),
-      AWS = require("aws-sdk");
-
 var assert = require('assert'),
     log4js = require('log4js'),
     server = require('../server'),
@@ -12,26 +9,21 @@ var assert = require('assert'),
 log4js.configure('./config/log4js.json');
 var log = log4js.getLogger("test");
 
-awsMock.setSDKInstance(AWS);
-
-var config = {
-  twitter: {
-    consumer_key: process.env.CONSUMER_KEY,
-    consumer_secret: process.env.CONSUMER_SECRET,
-    access_token: process.env.ACCESS_TOKEN,
-    access_token_secret: process.env.ACCESS_TOKEN_SECRET
-  }
-};
-
 describe('Tweet handling', function() {
   describe('Handle tweet with reference', function() {
-    it('should write a single request', (done) => {
+    it('should write a single request to Request table', () => {
+      const awsMock = require("aws-sdk-mock"),
+            AWS = require("aws-sdk");
+        
       try {
-        var start, end;
-        var datetimehigh = new Date();
+        awsMock.setSDKInstance(AWS);
 
-        start = Date.now();
-        awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback){
+        awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
+          if (Object.keys(params.RequestItems)[0] != server._tableNames['Request']) {
+            debugger;
+          }
+          assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
+          assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
           callback(null, { UnprocessedItems: [] });
         });
 
@@ -57,78 +49,12 @@ describe('Tweet handling', function() {
           server._processNewTweets(T, docClient).then( () => {
             assert(true);
             resolve();
+            awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
           });
         });
       } finally {
-        done();
       }
     });
   });
 });
 
-describe('Tweet handling TEST', function() {
-  describe('Handle tweet with reference', function() {
-    it('should write a single request', (done) => {
-      try {
-        awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback){
-          callback(null, { UnprocessedItems: [] });
-        });
-
-        var docClient = new AWS.DynamoDB.DocumentClient();
-
-        var batchWriteJSON = 
-        {
-          RequestItems: { 
-            'TestTable': [
-              {
-                PutRequest: {
-                  Item: {
-                    id: '1',
-                    a: 'b',
-                    b: 'c'
-                  }
-                }
-              }
-            ]
-          }
-        };
-
-        return new Promise( ( resolve, reject ) => {
-          docClient.batchWrite(batchWriteJSON, function(err, data) {
-            assert.equal(data.UnprocessedItems.length, 0);
-            resolve (data);
-          });
-        });
-      } finally {
-        awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
-        done();
-      }
-    });
-  });
-});
-
-describe('Mock testing', function() {
-  describe('Mock DynamoDB', function() {
-    it('should be mocked', (done) => {
-      try {
-        awsMock.mock('DynamoDB.DocumentClient', 'get', function (params, callback) {
-          callback(null, {pk: "foo", sk: "bar"});
-        })
-
-        let input = { TableName: '', Key: {} };
-        const client = new AWS.DynamoDB.DocumentClient({apiVersion: '2012-08-10'});
-        
-        return new Promise( ( resolve, reject ) => {
-          client.get(input, function (err, result) {
-            assert.deepEqual(result, { pk: 'foo', sk: 'bar' });
-            resolve(result);
-          });
-        });
-      }
-      finally {
-        awsMock.restore('DynamoDB.DocumentClient');
-        done();
-      }
-    })
-  })
-})

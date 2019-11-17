@@ -4,7 +4,6 @@ const async = require('async')
 const aws = require('aws-sdk')
 
 function Q (opts, concurrency) {
-    debugger;
     if (!(this instanceof Q)) {
         return new Q(opts, concurrency)
     }
@@ -25,21 +24,11 @@ function Q (opts, concurrency) {
         this.c = new aws.DynamoDB.DocumentClient(opts)
     }
   
-    this.drain = function () {};
-
     this.q = async.queue((task, cb) => task(cb), this.con)
-}
 
-debugger;
-//Q.prototype = {
-//    set drain (fn) {
-//        this.q.drain = fn
-//    }
-//}
+    this.set_drain = function (fn) { this.q.drain(fn); }
 
-Q.prototype.set_drain = function ( drain ) {
-  debugger;
-  this.drain = drain;
+    this.set_error = function (fn) { this.q.error(fn); }
 }
 
 Q.prototype.push = function (params) {
@@ -50,13 +39,9 @@ Q.prototype.push = function (params) {
 }
 
 function retryable_batch_write (q, c, params, delay) {
-  debugger;
     q.push(cb => {
-      debugger;
         setTimeout(() => {
-            debugger;
             c.batchWrite(params, (err, data) => {
-              debugger;
                 if (err) {
                     if (err.code === 'ProvisionedThroughputExceededException' && err.retryable) {
                         retryable_batch_write(q, c, params, delay * 2)

@@ -57,6 +57,8 @@ const MAX_RECORDS_BATCH = 2000,
     ReportItems: `${process.env.DB_PREFIX}_ReportItems`
   };
 
+module.exports._tableNames = tableNames;
+
 log.info(`${process.env.TWITTER_HANDLE}: start`);
 
 AWS.config.update({ region: "us-east-2" });
@@ -639,7 +641,7 @@ app.all("/processreportitems", function(request, response) {
 
 function processNewTweets(T, docClient) {
   var maxTweetIdRead = -1;
-
+  
   // Collect promises from these operations so they can go in parallel
   var twitter_promises = [];
 
@@ -651,7 +653,6 @@ function processNewTweets(T, docClient) {
     handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
   }
   var mentions_promise = new Promise((resolve, reject) => {
-    debugger;
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get(
       "search/tweets",
@@ -661,7 +662,6 @@ function processNewTweets(T, docClient) {
         tweet_mode: "extended"
       },
       function(err, data, response) {
-        debugger;
         if (err) {
           handleError(err);
           return false;
@@ -726,7 +726,7 @@ function processNewTweets(T, docClient) {
                   status.full_text
               );
             }
-
+            
             twitter_promises.push(
               batchWriteWithExponentialBackoff(
                 docClient,
@@ -742,7 +742,6 @@ function processNewTweets(T, docClient) {
 
         Promise.all(twitter_promises)
           .then(() => {
-            debugger;
             // Update the ids of the last tweet/dm if we processed
             // anything with larger ids.
             if (maxTweetIdRead > last_mention_id) {
@@ -840,19 +839,15 @@ function processNewDMs() {
 }
 
 function batchWriteWithExponentialBackoff(docClient, table, records) {
-  debugger;
   return new Promise( (resolve, reject) => {
     var qdb = docClient ? Q(docClient) : Q();
-    debugger;
     qdb.set_drain( function() {
-      debugger;
       resolve();
     });
     
-    qdb.error = (err, task) => {
-      debugger;
+    qdb.set_error(function(err, task) {
       reject(err);
-    };
+    });
 
     var startPos = 0;
     var endPos;
@@ -872,8 +867,6 @@ function batchWriteWithExponentialBackoff(docClient, table, records) {
 
       startPos = endPos;
     }
-    
-    debugger;
   })
 }
 
