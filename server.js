@@ -2,12 +2,13 @@
 module.exports = {
   _chompTweet: chompTweet,
   _splitLines: SplitLongLines,
-  _getQueryCount: GetQueryCount
+  _getQueryCount: GetQueryCount,
+  _processNewTweets: processNewTweets,
+  _processNewDMs: processNewDMs
 };
 
 /* Setting things up. */
 const AWS = require("aws-sdk"),
-  queue = require('dynamo-batchwrite-queue'),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),
@@ -17,6 +18,8 @@ const AWS = require("aws-sdk"),
   path = require("path"),
   soap = require("soap"),
   Twit = require("twit"),
+  Q = require('./util/batch-write-queue.js'),
+  strUtils = require('./util/stringutils.js'),
   convert = require("xml-js"),
   uuidv1 = require("uuid/v1");
 
@@ -28,11 +31,13 @@ var app = express(),
       access_token: process.env.ACCESS_TOKEN,
       access_token_secret: process.env.ACCESS_TOKEN_SECRET
     }
-  },
-  T = new Twit(config.twitter);
-
+  };
+  
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
+
+process.setMaxListeners(15);
+    
 
 // Log files
 log4js.configure('config/log4js.json');
@@ -78,216 +83,21 @@ var listener = app.listen(process.env.PORT, function() {
 });
 
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
-var app_id = -1;
-
-/* Get the current user account (victimblame) */
-T.get("account/verify_credentials", {}, function(err, data, response) {
-  if (err) {
-    handleError(err);
-    return false;
-  }
-  app_id = data.id;
-});
+var app_id = getAccountID();
 
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request, response) {
   try {
-    var maxTweetIdRead = -1;
-    var maxDmIdRead = -1;
-    // Collect promises from these operations so they can go in parallel
     var twitter_promises = [];
-    var docClient = new AWS.DynamoDB.DocumentClient();
-
-    /* First, let's load the ID of the last tweet we responded to. */
-    var last_mention_id = 
-        maxTweetIdRead = getLastMentionId();
+    var T = new Twit(config.twitter);
+    var tweet_process_promise = processNewTweets(T);
+    var dm_process_promise = processNewDMs();
     
-    var tweet_promises = [];
-    if (!last_mention_id) {
-      handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
-    }
-      var mentions_promise = new Promise( (resolve, reject) => {
-      /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
-      T.get(
-        "search/tweets",
-        {
-          q: "%40" + process.env.TWITTER_HANDLE,
-          since_id: last_mention_id,
-          tweet_mode: "extended"
-        },
-        function(err, data, response) {
-          if (err) {
-            handleError(err);
-            return false;
-          }
-
-          if (data.statuses.length) {
-            var request_records = [];
-
-            /* 
-            Iterate over each tweet. 
-
-            The replies can occur concurrently, but the threaded replies to each tweet must, 
-            within that thread, execute sequentially. 
-
-            Since each tweet with a mention is processed in parallel, keep track of largest ID
-            and write that at the end.
-            */
-            data.statuses.forEach(function(status) {
-              log.debug(`Found ${printTweet(status)}`);
-
-              if (maxTweetIdRead < status.id_str) {
-                maxTweetIdRead = status.id_str;
-              }
-
-              /*
-              Make sure this isn't a reply to one of the bot's tweets which would
-              include the bot screen name in full_text, but only due to replies.
-              */
-              const { chomped, chomped_text } = chompTweet(status);
-
-              if (!chomped || botScreenNameRegexp.test(chomped_text)) {
-                /* Don't reply to retweet or our own tweets. */
-                if (status.hasOwnProperty("retweet_status")) {
-                  log.debug(`Ignoring retweet: ${status.full_text}`);
-                } else if (status.user.id == app_id) {
-                  log.debug("Ignoring our own tweet: " + status.full_text);
-                } else {
-                  const { state, plate } = parseTweet(chomped_text);
-                  var now = new Date().valueOf();
-                  var item = {
-                    PutRequest: {
-                      Item: {
-                        id: uuidv1(),
-                        license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
-                        created: now,
-                        modified: now,
-                        processing_status: "UNPROCESSED",
-                        tweet_id: status.id,
-                        tweet_id_str: status.id_str,
-                        tweet_user_id: status.user.id,
-                        tweet_user_id_str: status.user.id_str,
-                        tweet_user_screen_name: status.user.screen_name
-                      }
-                    }
-                  };
-
-                  request_records.push(item);
-                }
-              } else {
-                log.debug(
-                  "Ignoring reply that didn't actually reference bot: " +
-                    status.full_text
-                );
-              }
-              
-              twitter_promises.push(batchWriteWithExponentialBackoff(tableNames["Request"], request_records));
-            });
-            
-          } else {
-            /* No new mentions since the last time we checked. */
-            log.debug("No new mentions...");
-          }
-          
-          Promise.all(twitter_promises).then( () => {
-            // Update the ids of the last tweet/dm if we processed
-            // anything with larger ids.
-            if (maxTweetIdRead > last_mention_id) {
-              setLastMentionId(maxTweetIdRead);
-            }
-
-            // resolve the outer promise for processing mentions
-            resolve();
-          }).catch( (err) => {
-            handleError(err);
-          });
-        }
-      );
-    });
-    
-    tweet_promises.push(mentions_promise);
-
-    /* Respond to DMs */
-    /* Load the ID of the last DM we responded to. */
-    var last_dm_id = 
-        maxDmIdRead = getLastDmId();
-
-    if (!last_dm_id) {
-      handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
-    }
-    
-    /*
-    var dm_promise = new Promise( (resolve, reject) => {
-    T.get("direct_messages", { since_id: last_dm_id, count: 200 }, function(
-      err,
-      dms,
-      response
-    ) {
-      // Next, let's DM's to our bot, starting after the last DM we responded to.
-      var dm_post_promises = [];
-      if (dms.length) {
-        
-        dms.forEach(function(dm) {
-          log.debug(
-            `Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`
-          );
-
-          // Now we can respond to each tweet.
-          var dm_post_promise = new Promise( (resolve, reject) => {
-          T.post(
-            "direct_messages/new",
-            {
-              user_id: dm.sender_id,
-              text: "This is a test response."
-            },
-            function(err, data, response) {
-              if (err) {
-                // TODO: Proper error handling?
-                handleError(err);
-              } else {
-                
-                if (maxDmIdRead < dm.id_str) {
-                  maxDmIdRead = dm.id_str;
-                }
-                
-                // TODO: Implement this.
-                resolve();
-              }
-            }
-          );
-          });
-          
-          dm_post_promises.push(dm_post_promise);
-        });
-        
-      } else {
-        // No new DMs since the last time we checked.
-        log.debug("No new DMs...");
-      }
-      
-      Promise.all(dm_post_promises).then( () => {
-        // resolve the outer promise for all dm's
-        resolve();
-      }).catch( (err) => {
-        handleError(err);
-      })
-    });
-    });
-    
-    tweet_promises.push(dm_promise);
-    */
+    twitter_promises.push(tweet_process_promise);
+    twitter_promises.push(dm_process_promise);
 
     // Now wait until processing of both tweets and dms is done.
-    Promise.all(tweet_promises).then( () => {
-      // Update the ids of the last tweet/dm if we processed
-      // anything with larger ids.
-      if (maxTweetIdRead > last_mention_id) {
-        setLastMentionId(maxTweetIdRead);
-      }
-      
-      if (maxDmIdRead > last_dm_id) {
-        setLastDmId(maxDmIdRead);
-      }
+    Promise.all(twitter_promises).then( () => {
       response.sendStatus(200);
     }).catch( (err) => {
       response.status(500).send(err);
@@ -476,6 +286,7 @@ app.all("/processrequests", function(request, response) {
                 });
 
                 batchWriteWithExponentialBackoff(
+                  new AWS.DynamoDB.DocumentClient(),
                   tableNames["Citations"],
                   citation_records
                 ).then(() => {
@@ -569,7 +380,10 @@ app.all("/processrequests", function(request, response) {
                     });
                   }
                   
-                  batchWriteWithExponentialBackoff(tableNames["Citations"], citation_records).then ( () => {
+                  batchWriteWithExponentialBackoff(
+                    new AWS.DynamoDB.DocumentClient(),
+                    tableNames["Citations"], 
+                    citation_records).then ( () => {
                     var params = {
                       TableName: tableNames["Request"],
                       Key: {
@@ -682,7 +496,10 @@ app.all("/processcitations", function(request, response) {
                       });
                     });
 
-                    batchWriteWithExponentialBackoff(tableNames["Citations"], citation_records).then( () => {
+                    batchWriteWithExponentialBackoff(
+                      new AWS.DynamoDB.DocumentClient(),
+                      tableNames["Citations"], 
+                      citation_records).then( () => {
                       // This is the one success point for this request.
                       // All other codepaths indicate a failure.
                       resolve();
@@ -784,7 +601,10 @@ app.all("/processreportitems", function(request, response) {
                 });
               });
             
-              batchWriteWithExponentialBackoff(tableNames["ReportItems"], report_item_records).then( () => {
+              batchWriteWithExponentialBackoff(
+                new AWS.DynamoDB.DocumentClient(),
+                tableNames["ReportItems"], 
+                report_item_records).then( () => {
                 // This is the one and only success point for these report item records.
                 // Every other codepath is an error of some kind.
                 resolve();
@@ -817,16 +637,220 @@ app.all("/processreportitems", function(request, response) {
   log.debug("Finished kicking of processing of report items.");
 });
 
-function batchWriteWithExponentialBackoff(table, records) {
+function processNewTweets(T, docClient) {
+  var maxTweetIdRead = -1;
+
+  // Collect promises from these operations so they can go in parallel
+  var twitter_promises = [];
+
+  /* First, let's load the ID of the last tweet we responded to. */
+  var last_mention_id = (maxTweetIdRead = getLastMentionId());
+
+  var tweet_promises = [];
+  if (!last_mention_id) {
+    handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
+  }
+  var mentions_promise = new Promise((resolve, reject) => {
+    debugger;
+    /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
+    T.get(
+      "search/tweets",
+      {
+        q: "%40" + process.env.TWITTER_HANDLE,
+        since_id: last_mention_id,
+        tweet_mode: "extended"
+      },
+      function(err, data, response) {
+        debugger;
+        if (err) {
+          handleError(err);
+          return false;
+        }
+
+        if (data.statuses.length) {
+          var request_records = [];
+
+          /* 
+          Iterate over each tweet. 
+
+          The replies can occur concurrently, but the threaded replies to each tweet must, 
+          within that thread, execute sequentially. 
+
+          Since each tweet with a mention is processed in parallel, keep track of largest ID
+          and write that at the end.
+          */
+          data.statuses.forEach(function(status) {
+            log.debug(`Found ${printTweet(status)}`);
+
+            if (maxTweetIdRead < status.id_str) {
+              maxTweetIdRead = status.id_str;
+            }
+
+            /*
+            Make sure this isn't a reply to one of the bot's tweets which would
+            include the bot screen name in full_text, but only due to replies.
+            */
+            const { chomped, chomped_text } = chompTweet(status);
+
+            if (!chomped || botScreenNameRegexp.test(chomped_text)) {
+              /* Don't reply to retweet or our own tweets. */
+              if (status.hasOwnProperty("retweet_status")) {
+                log.debug(`Ignoring retweet: ${status.full_text}`);
+              } else if (status.user.id == app_id) {
+                log.debug("Ignoring our own tweet: " + status.full_text);
+              } else {
+                const { state, plate } = parseTweet(chomped_text);
+                var now = new Date().valueOf();
+                var item = {
+                  PutRequest: {
+                    Item: {
+                      id: uuidv1(),
+                      license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
+                      created: now,
+                      modified: now,
+                      processing_status: "UNPROCESSED",
+                      tweet_id: status.id,
+                      tweet_id_str: status.id_str,
+                      tweet_user_id: status.user.id,
+                      tweet_user_id_str: status.user.id_str,
+                      tweet_user_screen_name: status.user.screen_name
+                    }
+                  }
+                };
+
+                request_records.push(item);
+              }
+            } else {
+              log.debug(
+                "Ignoring reply that didn't actually reference bot: " +
+                  status.full_text
+              );
+            }
+
+            twitter_promises.push(
+              batchWriteWithExponentialBackoff(
+                docClient,
+                tableNames["Request"],
+                request_records
+              )
+            );
+          });
+        } else {
+          /* No new mentions since the last time we checked. */
+          log.debug("No new mentions...");
+        }
+
+        Promise.all(twitter_promises)
+          .then(() => {
+            debugger;
+            // Update the ids of the last tweet/dm if we processed
+            // anything with larger ids.
+            if (maxTweetIdRead > last_mention_id) {
+              setLastMentionId(maxTweetIdRead);
+            }
+
+            // resolve the outer promise for processing mentions
+            resolve();
+          })
+          .catch(err => {
+            handleError(err);
+          });
+      }
+    );
+  });
   
-  return new Promise( (resolve, reject) => {
-    var qdb = queue();
+  return mentions_promise;
+}
+
+function processNewDMs() {
+  var maxDmIdRead = -1;
+
+  /* Respond to DMs */
+  /* Load the ID of the last DM we responded to. */
+  var last_dm_id = (maxDmIdRead = getLastDmId());
+
+  if (!last_dm_id) {
+    handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
+  }
+
+  var dm_promise = Promise.resolve();
+  /*
+    TODO: Implement DM handling.
+    var dm_promise = new Promise( (resolve, reject) => {
+    T.get("direct_messages", { since_id: last_dm_id, count: 200 }, function(
+      err,
+      dms,
+      response
+    ) {
+      // Next, let's DM's to our bot, starting after the last DM we responded to.
+      var dm_post_promises = [];
+      if (dms.length) {
+        
+        dms.forEach(function(dm) {
+          log.debug(
+            `Direct message: sender (${dm.sender_id}) id_str (${dm.id_str}) ${dm.text}`
+          );
+
+          // Now we can respond to each tweet.
+          var dm_post_promise = new Promise( (resolve, reject) => {
+          T.post(
+            "direct_messages/new",
+            {
+              user_id: dm.sender_id,
+              text: "This is a test response."
+            },
+            function(err, data, response) {
+              if (err) {
+                // TODO: Proper error handling?
+                handleError(err);
+              } else {
+                
+                if (maxDmIdRead < dm.id_str) {
+                  maxDmIdRead = dm.id_str;
+                }
+                
+                // TODO: Implement this.
+                resolve();
+              }
+            }
+          );
+          });
+          
+          dm_post_promises.push(dm_post_promise);
+        });
+        
+      } else {
+        // No new DMs since the last time we checked.
+        log.debug("No new DMs...");
+      }
+      
+      Promise.all(dm_post_promises).then( () => {
+        // resolve the outer promise for all dm's
+        resolve();
+      }).catch( (err) => {
+        handleError(err);
+      })
+    });
+    });
     
-    qdb.drain = () => {
+    tweet_promises.push(dm_promise);
+    */
+  
+  return dm_promise;
+}
+
+function batchWriteWithExponentialBackoff(docClient, table, records) {
+  debugger;
+  return new Promise( (resolve, reject) => {
+    var qdb = docClient ? Q(docClient) : Q();
+    debugger;
+    qdb.set_drain( function() {
+      debugger;
       resolve();
-    };
+    });
     
     qdb.error = (err, task) => {
+      debugger;
       reject(err);
     };
 
@@ -848,6 +872,8 @@ function batchWriteWithExponentialBackoff(table, records) {
 
       startPos = endPos;
     }
+    
+    debugger;
   })
 }
 
@@ -1024,45 +1050,6 @@ function SendResponses(origTweet, report_items) {
   });
 }
 
-/**
- * When investigating a selenium test failure on a remote headless browser that couldn't be reproduced
- * locally, I wanted to add some javascript to the site under test that would dump some state to the
- * page (so it could be captured by Selenium as a screenshot when the test failed). JSON.stringify()
- * didn't work because the object declared a toJSON() method, and JSON.stringify() just calls that
- * method if it's present. This was a Moment object, so toJSON() returned a string but I wanted to see
- * the internal state of the object instead.
- *
- * So, this is a rough and ready function that recursively dumps any old javascript object.
- */
-function printObject(o, indent) {
-  var out = "";
-  if (typeof indent === "undefined") {
-    indent = 0;
-  }
-  for (var p in o) {
-    if (o.hasOwnProperty(p)) {
-      var val = o[p];
-      out += new Array(4 * indent + 1).join(" ") + p + ": ";
-      if (typeof val === "object") {
-        if (val instanceof Date) {
-          out += 'Date "' + val.toISOString() + '"';
-        } else {
-          out +=
-            "{\n" +
-            printObject(val, indent + 1) +
-            new Array(4 * indent + 1).join(" ") +
-            "}";
-        }
-      } else if (typeof val === "function") {
-      } else {
-        out += '"' + val + '"';
-      }
-      out += ",\n";
-    }
-  }
-  return out;
-}
-
 function getLastDmId() {
   var lastdm = localStorage.getItem('lastdm');
   
@@ -1163,7 +1150,7 @@ function logTweetById(id) {
   var tweet = getTweetById(id);
 
   if (tweet) {
-    console.log(`logTweetById (${id}): ${printObject(tweet)}`);
+    console.log(`logTweetById (${id}): ${strUtils._printObject(tweet)}`);
   }
 }
 
@@ -1448,6 +1435,20 @@ function WriteReportItemRecords(request_id, citation, report_items) {
 
   // 3. Write the report item records, returning that Promise. 
   return batchWriteWithExponentialBackoff(tableNames["ReportItems"], report_item_records);
+}
+
+async function getAccountID() {
+  var T = new Twit(config.twitter);
+
+  /* Get the current user account (victimblame) */
+  var id = await T.get("account/verify_credentials", {}, function(err, data, response) {
+    if (err) {
+      handleError(err);
+    }
+    return data.id;
+  });
+
+  return id;
 }
 
 /*
