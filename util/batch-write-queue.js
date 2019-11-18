@@ -1,3 +1,4 @@
+// TODO: Comment on this github or npmjs project for this.
 'use strict'
 
 const async = require('async')

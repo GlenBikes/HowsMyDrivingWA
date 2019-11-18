@@ -749,6 +749,7 @@ function processNewTweets(T, docClient) {
             }
 
             // resolve the outer promise for processing mentions
+            log.trace(`Resolving outer processNewTweets promise`);
             resolve();
           })
           .catch(err => {
@@ -842,10 +843,12 @@ function batchWriteWithExponentialBackoff(docClient, table, records) {
   return new Promise( (resolve, reject) => {
     var qdb = docClient ? Q(docClient) : Q();
     qdb.set_drain( function() {
+      log.trace(`Resolving promise returned by batchWriteWithExponentialBackoff.`);
       resolve();
     });
     
     qdb.set_error(function(err, task) {
+      log.trace(`Rejecting promise returned by batchWriteWithExponentialBackoff.`);
       reject(err);
     });
 
