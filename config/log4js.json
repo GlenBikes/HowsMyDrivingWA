@@ -33,6 +33,12 @@
         "maxLogSize": 1048576,
         "numBackups": 2
       },
+      "test": {
+        "type": "file",
+        "filename": "log/test.log",
+        "maxLogSize": 1048576,
+        "numBackups": 2
+      },
       "errors": {
         "type": "logLevelFilter",
         "level": "ERROR",
@@ -47,6 +53,7 @@
     "categories": {
       "default": { "appenders": [ "app", "out" ], "level": "ALL" },
       "_lastmention": { "appenders": [ "lastmention", "stdout" ], "level": "ALL" },
-      "_lastdm": { "appenders": [ "lastdm", "stdout"    ], "level": "ALL" }
+      "_lastdm": { "appenders": [ "lastdm", "stdout"    ], "level": "ALL" },
+      "_test": { "appenders": [ "test", "stdout"    ], "level": "ALL" }
     }
 }

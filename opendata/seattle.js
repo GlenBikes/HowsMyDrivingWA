@@ -64,7 +64,6 @@ function GetCitationsByPlate(plate, state) {
       // Now put the unique citations back to an array
       var allCitations = Object.keys(citationsByCitationID).map(function(v) { return citationsByCitationID[v]; });
 
-      log.debug(`Found ${allCitations.length} citations for vehicle with plate ${state}:${plate}`);
       resolve(allCitations);
     });
   });
@@ -95,9 +94,6 @@ function GetVehicleIDs(plate, state) {
           
           if (vehicle.Plate == plate) {
             vehicle_records.push(vehicle);
-          }
-          else {
-            log.debug(`Filtering out vehicle with plate ${state}:${vehicle.Plate}.`);
           }
         }
         resolve(vehicle_records);
