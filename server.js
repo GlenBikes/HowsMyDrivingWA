@@ -92,8 +92,6 @@ app.all("/tweet", function(request, response) {
   
   // We need the bot's app id to detect tweets from the bot
   getAccountID(T).then( ( app_id ) => {
-    log.info(`app_id in tweet: ${app_id}.`);
-    
     try {
       var twitter_promises = [];
       var tweet_process_promise = processNewTweets(T, docClient, app_id);
@@ -660,7 +658,7 @@ function processNewTweets(T, docClient, bot_app_id) {
     handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
   }
   var mentions_promise = new Promise((resolve, reject) => {
-    log.info(`Checking for tweets greater than ${last_mention_id}.`);
+    log.info(`Checking for tweets beyond ${last_mention_id}.`);
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get(
       "search/tweets",
@@ -750,7 +748,6 @@ function processNewTweets(T, docClient, bot_app_id) {
           log.debug("No new mentions...");
         }
 
-        log.info(`Waiting on ${twitter_promises.length} twitter_promises.`);
         Promise.all(twitter_promises)
           .then(() => {
             // Update the ids of the last tweet/dm if we processed
