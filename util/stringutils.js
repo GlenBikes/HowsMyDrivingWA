@@ -1,11 +1,18 @@
 // Exported functions that unit tests need.
 module.exports = {
   _splitLines: SplitLongLines,
-  _printObject: printObject
+  _printObject: printObject,
+  _getUUID: getUUID
 };
 
 // modules
+const uuidv1 = require("uuid/v1");
 
+
+// Wrap this so we can stub it.
+function getUUID() {
+  return uuidv1();
+}
 /*
  * Split array of strings to ensure each string is <= maxLen
  *

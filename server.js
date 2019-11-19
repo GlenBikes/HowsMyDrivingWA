@@ -130,7 +130,7 @@ app.all("/test", function(request, response) {
       mocha.addFile(path.join(testDir, file));
     });
 
-  var test_results = "";
+  var test_results = '';
   var failures = false;
 
   // Run the tests.
@@ -153,7 +153,6 @@ app.all("/test", function(request, response) {
       test_results +=
         "*********************************************\n\nTests all finished!\n\n********************************************";
       // send your email here
-      log.debug(test_results);
       if (!failures) {
         response.sendStatus(200);
       } else {
@@ -262,11 +261,11 @@ app.all("/processrequests", function(request, response) {
                   `Not a valid state/plate in this request (${state}/${plate}).`
                 );
                 // There was no valid plate found in the tweet. Add a dummy citation.
-                var now = new Date().valueOf();
+                var now = Date.now();
                 // TTL is 10 years from now until the records are PROCESSED
-                var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
+                var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
                 var citation = {
-                  id: uuidv1(),
+                  id: strUtils._getUUID(),
                   Citation: seattle.CitationIDNoPlateFound,
                   processing_status: "UNPROCESSED",
                   license: item.license,
@@ -304,7 +303,7 @@ app.all("/processrequests", function(request, response) {
                           },
                           modified: {
                             Action: "PUT",
-                            Value: new Date().valueOf()
+                            Value: Date.now()
                           }
                         }
                       };
@@ -322,12 +321,12 @@ app.all("/processrequests", function(request, response) {
               } else {
                 seattle.GetCitationsByPlate(plate, state).then(function(citations) {
                   if (!citations || citations.length == 0) {
-                    var now = new Date().valueOf();
+                    var now = Date.now();
                     // TTL is 10 years from now until the records are PROCESSED
-                    var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
+                    var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
                     var citation = {
-                      id: uuidv1(),
+                      id: strUtils._getUUID(),
                       Citation: seattle.CitationIDNoCitationsFound,
                       request_id: item.id,
                       processing_status: "UNPROCESSED",
@@ -353,11 +352,11 @@ app.all("/processrequests", function(request, response) {
                     });
                   } else {
                     citations.forEach(citation => {
-                      var now = new Date().valueOf();
+                      var now = Date.now();
                       // TTL is 10 years from now until the records are PROCESSED
-                      var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
+                      var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
-                      citation.id = uuidv1();
+                      citation.id = strUtils._getUUID();
                       citation.request_id = item.id;
                       citation.processing_status = "UNPROCESSED";
                       citation.license = item.license;
@@ -386,30 +385,34 @@ app.all("/processrequests", function(request, response) {
                     new AWS.DynamoDB.DocumentClient(),
                     tableNames["Citations"], 
                     citation_records).then ( () => {
-                    var params = {
-                      TableName: tableNames["Request"],
-                      Key: {
-                        id: item.id
-                      },
-                      AttributeUpdates: {
-                        processing_status: {
-                          Action: "PUT",
-                          Value: "PROCESSED"
+                      log.info(`Finished writing ${citation_records.length} citation records for ${state}:${plate}.`);          
+                    
+                      var params = {
+                        TableName: tableNames["Request"],
+                        Key: {
+                          id: item.id
                         },
-                        modified: {
-                          Action: "PUT",
-                          Value: new Date().valueOf()
+                        AttributeUpdates: {
+                          processing_status: {
+                            Action: "PUT",
+                            Value: "PROCESSED"
+                          },
+                          modified: {
+                            Action: "PUT",
+                            Value: Date.now()
+                          }
                         }
-                      }
-                    };
+                      };
 
-                    // What happens if update gets throttled?
-                    // I don't see any info on that. Does that mean it doesn't?
-                    // It just succeeds or fails?
-                    docClient.update(params, function(err, data) {
-                      if (err) {
-                        handleError(err);
-                      }
+                      // What happens if update gets throttled?
+                      // I don't see any info on that. Does that mean it doesn't?
+                      // It just succeeds or fails?
+                      docClient.update(params, function(err, data) {
+                        if (err) {
+                          handleError(err);
+                        }
+                        
+                        log.info(`Updated request ${item.id} record.`);
                       
                       // OK this is the success point for processing this reqeuest.
                       // Resolve the Promise we are in.
@@ -442,8 +445,6 @@ app.all("/processrequests", function(request, response) {
   catch ( err ) {
     response.status(500).send(err);
   }
-
-  log.debug("Finished kicking off the tweet handling process.");
 });
 
 app.all("/processcitations", function(request, response) {
@@ -478,13 +479,14 @@ app.all("/processcitations", function(request, response) {
               .ProcessCitationsForRequest(citationsByRequest[request_id])
               .then(report_items => {
                 // Write report items
-                WriteReportItemRecords(request_id, citation, report_items)
+                WriteReportItemRecords(docClient, request_id, citation, report_items)
                   .then(function(results) {
+                    log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
                     // Set the processing status of all the citations
                     var citation_records = [];
-                    var now = new Date().valueOf();
+                    var now = Date.now();
                     // Now that the record is PROCESSED, TTL is 1 month 
-                    var ttl_expire = new Date().setMonth(new Date().getMonth() + 1);
+                    var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
                     citationsByRequest[request_id].forEach(citation => {
                       citation.processing_status = "PROCESSED";
@@ -502,6 +504,7 @@ app.all("/processcitations", function(request, response) {
                       new AWS.DynamoDB.DocumentClient(),
                       tableNames["Citations"], 
                       citation_records).then( () => {
+                      log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
                       // This is the one success point for this request.
                       // All other codepaths indicate a failure.
                       resolve();
@@ -536,11 +539,10 @@ app.all("/processcitations", function(request, response) {
   } catch (err) {
     response.status(500).send(err);
   }
-  
-  log.debug("Finished kicking off the processing of citations.");
 });
 
 app.all("/processreportitems", function(request, response) {
+  var T = new Twit(config.twitter);
   var docClient = new AWS.DynamoDB.DocumentClient();
   var request_promises = [];
 
@@ -583,13 +585,15 @@ app.all("/processreportitems", function(request, response) {
           };
 
           // Send a copy of the report items to SendResponse since we need to
-          SendResponses(origTweet, reportItemsByRequest[request_id])
+          SendResponses(T, origTweet, reportItemsByRequest[request_id])
             .then(() => {
+              log.debug(`Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`);
+            
               // Set the processing status of all the report_items
               var report_item_records = [];
-              var now = new Date().valueOf();
+              var now = Date.now();
               // Now that the record is PROCESSED, TTL is 1 month 
-              var ttl_expire = new Date().setMonth(new Date().getMonth() + 1)
+              var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
               reportItemsByRequest[request_id].forEach(report_item => {
                 report_item.processing_status = "PROCESSED";
@@ -635,8 +639,6 @@ app.all("/processreportitems", function(request, response) {
     .catch(function(err) {
       response.status(500).send(err);
     });
-  
-  log.debug("Finished kicking of processing of report items.");
 });
 
 function processNewTweets(T, docClient) {
@@ -668,8 +670,6 @@ function processNewTweets(T, docClient) {
         }
 
         if (data.statuses.length) {
-          var request_records = [];
-
           /* 
           Iterate over each tweet. 
 
@@ -680,6 +680,8 @@ function processNewTweets(T, docClient) {
           and write that at the end.
           */
           data.statuses.forEach(function(status) {
+            var request_records = [];
+
             log.debug(`Found ${printTweet(status)}`);
 
             if (maxTweetIdRead < status.id_str) {
@@ -700,11 +702,11 @@ function processNewTweets(T, docClient) {
                 log.debug("Ignoring our own tweet: " + status.full_text);
               } else {
                 const { state, plate } = parseTweet(chomped_text);
-                var now = new Date().valueOf();
+                var now = Date.now();
                 var item = {
                   PutRequest: {
                     Item: {
-                      id: uuidv1(),
+                      id: strUtils._getUUID(),
                       license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
                       created: now,
                       modified: now,
@@ -748,8 +750,6 @@ function processNewTweets(T, docClient) {
               setLastMentionId(maxTweetIdRead);
             }
 
-            // resolve the outer promise for processing mentions
-            log.trace(`Resolving outer processNewTweets promise`);
             resolve();
           })
           .catch(err => {
@@ -843,12 +843,10 @@ function batchWriteWithExponentialBackoff(docClient, table, records) {
   return new Promise( (resolve, reject) => {
     var qdb = docClient ? Q(docClient) : Q();
     qdb.set_drain( function() {
-      log.trace(`Resolving promise returned by batchWriteWithExponentialBackoff.`);
       resolve();
     });
     
     qdb.set_error(function(err, task) {
-      log.trace(`Rejecting promise returned by batchWriteWithExponentialBackoff.`);
       reject(err);
     });
 
@@ -985,7 +983,7 @@ async function GetQueryCount(license) {
   });
 }
 
-function SendResponses(origTweet, report_items) {
+function SendResponses(T, origTweet, report_items) {
   if (report_items.length == 0) {
     // return an promise that is already resolved, ending the recursive
     // chain of promises that have been built.
@@ -1010,19 +1008,33 @@ function SendResponses(origTweet, report_items) {
         auto_populate_reply_metadata: true
       },
       function(err, data, response) {
-        if (err) {
+        if (err && err.code != 187) {
           if (err.code == 187) {
-            // This appears to be a "status is a duplicate" error which
-            // means we are trying to resend a tweet we already sent.
-            // Pretend we succeeded.
-            log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
             resolve();
             return;
           } else {
             handleError(err);
           }
         } else {
-          log.debug(`Sent tweet: ${printTweet(data)}.`);
+          if (err && err.code == 187) {
+            // This appears to be a "status is a duplicate" error which
+            // means we are trying to resend a tweet we already sent.
+            // Pretend we succeeded.
+            log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
+            
+            // Keep replying to the tweet we were told to reply to.
+            // This means that in this scenario, if any of the rest of the tweets in this
+            // thread have not been sent, they will create a new thread off the parent of
+            // this one.
+            // Not ideal, but the other alternatives are:
+            // 1) Query for the previous duplicate tweet and then pass that along
+            // 2) set all of the replies for this request to be PROCESSED even if they did not 
+            //    all get tweeted.
+            data = origTweet;
+          }
+          else {
+            log.debug(`Sent tweet: ${printTweet(data)}.`);
+          }
 
           // Wait a bit. It seems tweeting a whackload of tweets in quick succession
           // can cause Twitter to think you're a troll bot or something and then some
@@ -1031,9 +1043,8 @@ function SendResponses(origTweet, report_items) {
           sleep(INTER_TWEET_DELAY_MS).then(() => {
             // Send the rest of the responses. When those are sent, then resolve
             // the local Promise.
-            SendResponses(data, report_items_clone)
+            SendResponses(T, data, report_items_clone)
               .then(tweet => {
-                log.debug(`Finished sending ${report_items_clone.length} tweets.`);
                 resolve(data);
               })
               .catch(err => {
@@ -1070,7 +1081,7 @@ function getLastDmId() {
     }  
   }
   
-  return lastdm ? lastdm : 0;
+  return lastdm ? parseInt(lastdm, 10) : 0;
 }
 
 function getLastMentionId() {
@@ -1094,7 +1105,7 @@ function getLastMentionId() {
     }  
   }
   
-  return lastmention ? lastmention : 0;
+  return lastmention ? parseInt(lastmention, 10) : 0;
 }
 
 function setLastDmId(lastDmId) {
@@ -1128,8 +1139,6 @@ function printTweet(tweet) {
 }
 
 function handleError(error) {
-  log.error(`ERROR: ${error}`);
-
   // Truncate the callstack because only the first few lines are relevant to this code.
   var stacktrace = error.stack
     .split("\n")
@@ -1389,7 +1398,7 @@ function GetReportItemRecords() {
   });
 }
 
-function WriteReportItemRecords(request_id, citation, report_items) {
+function WriteReportItemRecords(docClient, request_id, citation, report_items) {
   var docClient = new AWS.DynamoDB.DocumentClient();
   var truncated_report_items = [];
 
@@ -1398,9 +1407,9 @@ function WriteReportItemRecords(request_id, citation, report_items) {
   truncated_report_items = SplitLongLines(report_items, maxTweetLength);
 
   // 2. Build the report item records
-  var now = new Date().valueOf();
+  var now = Date.now();
   // TTL is 10 years from now until the records are PROCESSED
-  var ttl_expire = new Date().setFullYear(new Date().getFullYear() + 10);
+  var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
   var report_item_records = [];
   var record_num = 0;
 
@@ -1408,7 +1417,7 @@ function WriteReportItemRecords(request_id, citation, report_items) {
     var item = {
       PutRequest: {
         Item: {
-          id: uuidv1(),
+          id: strUtils._getUUID(),
           request_id: request_id,
           record_num: record_num++,
           created: now,
@@ -1430,7 +1439,7 @@ function WriteReportItemRecords(request_id, citation, report_items) {
   });
 
   // 3. Write the report item records, returning that Promise. 
-  return batchWriteWithExponentialBackoff(tableNames["ReportItems"], report_item_records);
+  return batchWriteWithExponentialBackoff(docClient, tableNames["ReportItems"], report_item_records);
 }
 
 async function getAccountID() {

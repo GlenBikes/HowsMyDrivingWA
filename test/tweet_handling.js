@@ -17,14 +17,14 @@ describe('Tweet handling', function() {
       
       awsMock.setSDKInstance(AWS);
 
-      debugger; 
+      // Use the fake timer (now is 0).
+      var now = new Date().valueOf();
+      var stubNow = sinon.stub(Date, 'now').returns(now);
+
+      const stubUuid = sinon.stub(strUtils, '_getUUID').returns( "4887b7a0-09a1-11ea-a100-f9a53a6b0433" );
 
       
       const batchWriteSpy = sinon.spy((params, callback) => {
-        debugger;
-        if (Object.keys(params.RequestItems)[0] != server._tableNames['Request']) {
-          debugger;
-        }
         assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
         assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
         callback(null, { UnprocessedItems: [] });
@@ -52,14 +52,34 @@ describe('Tweet handling', function() {
 
       return new Promise( ( resolve, reject) => {
         server._processNewTweets(T, docClient).then( () => {
-          log.trace(`Inside then statement for Handle tweet with reference _processNewTweets.`);
+          var expected_params = {
+            RequestItems: {
+              HMDWA_Request: [{
+                  PutRequest: {
+                      Item: {
+                          id: strUtils._getUUID(),
+                          license: "TX:78DFSD",
+                          created: now,
+                          modified: now,
+                          processing_status: "UNPROCESSED",
+                          tweet_id: "123",
+                          tweet_id_str: "123",
+                          tweet_user_id: "-1",
+                          tweet_user_id_str: "-1",
+                          tweet_user_screen_name: "None",
+                      },
+                  },
+              }],
+            },
+          }
           assert(batchWriteSpy.calledOnce);
+          batchWriteSpy.calledWithMatch(expected_params);
           resolve();
-          awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
-        }).catch ( (err) => {
-          
+        }).catch( (err) => {
           reject(err);
+        }).finally( () => {
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
+          stubNow.restore();
         });
       });
     });
@@ -73,16 +93,13 @@ describe('Tweet handling', function() {
       awsMock.setSDKInstance(AWS);
 
       awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
-        if (Object.keys(params.RequestItems)[0] != server._tableNames['Request']) {
-          debugger;
-        }
         assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
         assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
         // Make sure this is the "no license found" tweet.
         assert.equal(params.RequestItems[server._tableNames['Request']][0].PutRequest.Item.license, ':');
         callback(null, { UnprocessedItems: [] });
       });
-
+      
       var docClient = new AWS.DynamoDB.DocumentClient();
 
       var T = {
@@ -103,13 +120,12 @@ describe('Tweet handling', function() {
 
       return new Promise( ( resolve, reject ) => {
         server._processNewTweets(T, docClient).then( () => {
-          log.trace(`Inside then statement for Handle tweet without license _processNewTweets.`);
-          assert(true);
           resolve();
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
         }).catch ( ( err ) => {
-          awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
           reject(err);
+        }).finally( () => {
+          awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
         });
       });
     });
@@ -123,9 +139,6 @@ describe('Tweet handling', function() {
       awsMock.setSDKInstance(AWS);
 
       awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
-        if (Object.keys(params.RequestItems)[0] != server._tableNames['Request']) {
-          debugger;
-        }
         assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
         assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
         // Make sure this is the "no license found" tweet.
@@ -153,9 +166,10 @@ describe('Tweet handling', function() {
 
       return new Promise( ( resolve, reject ) => {
         server._processNewTweets(T, docClient).then( () => {
-        log.trace(`Inside then statement for Handle multiple tweets _processNewTweets.`);
-          assert(true);
           resolve();
+        }).catch( ( err ) => {
+          throw err;
+        }).finally( () => {
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
         });
       });
