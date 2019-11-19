@@ -2,7 +2,8 @@
 module.exports = {
   _splitLines: SplitLongLines,
   _printObject: printObject,
-  _getUUID: getUUID
+  _getUUID: getUUID,
+  _compare_numeric_strings: compare_numeric_strings
 };
 
 // modules
@@ -136,5 +137,30 @@ function printObject(o, indent) {
     }
   }
   return out;
+}
+
+String.prototype.lpad = function(padString, length) {
+    var str = this;
+    while (str.length < length)
+        str = padString + str;
+    return str;
+}
+
+function compare_numeric_strings(a, b) {
+  if (a.length > b.length) {
+    b = b.lpad('0', a.length);
+  }
+  
+  if (b.length > a.length) {
+    a = a.lpad('0', b.length);
+  }
+  
+  if (a == b) {
+    return 0;
+  } else if (a < b) {
+    return -1;
+  } else {
+    return 1;
+  }
 }
 

@@ -85,28 +85,33 @@ var listener = app.listen(process.env.PORT, function() {
 });
 
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
-var app_id = getAccountID();
-
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request, response) {
-  try {
-    var twitter_promises = [];
-    var T = new Twit(config.twitter);
-    var tweet_process_promise = processNewTweets(T);
-    var dm_process_promise = processNewDMs();
+  const T = new Twit(config.twitter);
+  var docClient = new AWS.DynamoDB.DocumentClient();
+  
+  // We need the bot's app id to detect tweets from the bot
+  getAccountID(T).then( ( app_id ) => {
+    log.info(`app_id in tweet: ${app_id}.`);
     
-    twitter_promises.push(tweet_process_promise);
-    twitter_promises.push(dm_process_promise);
+    try {
+      var twitter_promises = [];
+      var tweet_process_promise = processNewTweets(T, docClient, app_id);
+      var dm_process_promise = processNewDMs();
 
-    // Now wait until processing of both tweets and dms is done.
-    Promise.all(twitter_promises).then( () => {
-      response.sendStatus(200);
-    }).catch( (err) => {
+      twitter_promises.push(tweet_process_promise);
+      twitter_promises.push(dm_process_promise);
+
+      // Now wait until processing of both tweets and dms is done.
+      Promise.all(twitter_promises).then( () => {
+        response.sendStatus(200);
+      }).catch( (err) => {
+        response.status(500).send(err);
+      });
+    } catch ( err ) {
       response.status(500).send(err);
-    });
-  } catch ( err ) {
-    response.status(500).send(err);
-  }
+    }
+  });
 });
 
 app.all("/test", function(request, response) {
@@ -641,7 +646,7 @@ app.all("/processreportitems", function(request, response) {
     });
 });
 
-function processNewTweets(T, docClient) {
+function processNewTweets(T, docClient, bot_app_id) {
   var maxTweetIdRead = -1;
   
   // Collect promises from these operations so they can go in parallel
@@ -655,6 +660,7 @@ function processNewTweets(T, docClient) {
     handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
   }
   var mentions_promise = new Promise((resolve, reject) => {
+    log.info(`Checking for tweets greater than ${last_mention_id}.`);
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get(
       "search/tweets",
@@ -684,7 +690,7 @@ function processNewTweets(T, docClient) {
 
             log.debug(`Found ${printTweet(status)}`);
 
-            if (maxTweetIdRead < status.id_str) {
+            if (strUtils._compare_numeric_strings(maxTweetIdRead, status.id_str) < 0) {
               maxTweetIdRead = status.id_str;
             }
 
@@ -698,7 +704,7 @@ function processNewTweets(T, docClient) {
               /* Don't reply to retweet or our own tweets. */
               if (status.hasOwnProperty("retweet_status")) {
                 log.debug(`Ignoring retweet: ${status.full_text}`);
-              } else if (status.user.id == app_id) {
+              } else if (status.user.id == bot_app_id) {
                 log.debug("Ignoring our own tweet: " + status.full_text);
               } else {
                 const { state, plate } = parseTweet(chomped_text);
@@ -729,24 +735,27 @@ function processNewTweets(T, docClient) {
               );
             }
             
-            twitter_promises.push(
-              batchWriteWithExponentialBackoff(
-                docClient,
-                tableNames["Request"],
-                request_records
-              )
-            );
+            if (request_records.length > 0) {
+              twitter_promises.push(
+                batchWriteWithExponentialBackoff(
+                  docClient,
+                  tableNames["Request"],
+                  request_records
+                )
+              );
+            }
           });
         } else {
           /* No new mentions since the last time we checked. */
           log.debug("No new mentions...");
         }
 
+        log.info(`Waiting on ${twitter_promises.length} twitter_promises.`);
         Promise.all(twitter_promises)
           .then(() => {
             // Update the ids of the last tweet/dm if we processed
             // anything with larger ids.
-            if (maxTweetIdRead > last_mention_id) {
+            if (strUtils._compare_numeric_strings(maxTweetIdRead, last_mention_id) > 0) {
               setLastMentionId(maxTweetIdRead);
             }
 
@@ -1105,7 +1114,7 @@ function getLastMentionId() {
     }  
   }
   
-  return lastmention ? parseInt(lastmention, 10) : 0;
+  return lastmention ? lastmention : "0";
 }
 
 function setLastDmId(lastDmId) {
@@ -1442,18 +1451,15 @@ function WriteReportItemRecords(docClient, request_id, citation, report_items) {
   return batchWriteWithExponentialBackoff(docClient, tableNames["ReportItems"], report_item_records);
 }
 
-async function getAccountID() {
-  var T = new Twit(config.twitter);
-
-  /* Get the current user account (victimblame) */
-  var id = await T.get("account/verify_credentials", {}, function(err, data, response) {
-    if (err) {
-      handleError(err);
-    }
-    return data.id;
+function getAccountID(T) {
+  return new Promise( ( resolve, reject) => {
+    T.get("account/verify_credentials", {}, function(err, data, response) {
+      if (err) {
+        handleError(err);
+      }
+      resolve(data.id);
+    });    
   });
-
-  return id;
 }
 
 /*
