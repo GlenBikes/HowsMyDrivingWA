@@ -9,6 +9,7 @@ module.exports = {
 
 /* Setting things up. */
 const AWS = require("aws-sdk"),
+  convert = require("xml-js"),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),

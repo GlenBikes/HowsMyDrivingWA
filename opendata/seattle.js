@@ -15,7 +15,8 @@ module.exports = {
 };
 
 // modules
-var express = require("express"),
+var convert = require("xml-js"),
+    express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     log4js = require('log4js'),
