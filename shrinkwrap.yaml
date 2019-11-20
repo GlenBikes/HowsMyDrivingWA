@@ -1,73 +1,31 @@
 dependencies:
-  async: 3.1.0
-  aws-sdk: 2.575.0
-  aws-sdk-mock: 4.5.0
-  backoff: 2.5.0
-  dynamo-batchwrite-queue: 1.0.1
+  aws-sdk: 2.568.0
   express: 4.17.1
   interface.js: 2.0.0
   json2html: 0.0.8
-  live-mutex: 0.2.21
   log4js: 4.5.1
   mocha: 6.2.2
   n-readlines: 1.0.0
   node-localstorage: 1.3.1
   prepend-file: 1.3.1
   request: 2.88.0
-  sinon: 7.5.0
   soap: 0.30.0
   twit: 2.2.11
   uuid: 3.3.3
   xml-js: 1.6.11
 packages:
-  /@oresoftware/json-stream-parser/0.0.124:
-    dev: false
-    hasBin: true
-    resolution:
-      integrity: sha512-b40qJ6iCoyC9myCe6CP/uQnp3xPbj/EEY2Lz7XoXGhc6NYPp6Grbis1qZ4dItHpk2cnv4qJNNVauBMEhuwF36A==
-  /@oresoftware/linked-queue/0.1.106:
-    dependencies:
-      chalk: 2.4.2
-    dev: false
-    resolution:
-      integrity: sha512-k60Qz+XC+ERMuWYBib1bqCDuP1HXjUM22kF5fie/nj/R9qCbwi7xPre6w/YH1gx9I0tO0wZYnc9VVt66Cvjdxw==
-  /@sinonjs/commons/1.6.0:
-    dependencies:
-      type-detect: 4.0.8
-    dev: false
-    resolution:
-      integrity: sha512-w4/WHG7C4WWFyE5geCieFJF6MZkbW4VAriol5KlmQXpAQdxvV0p26sqNZOW6Qyw6Y0l9K4g+cHvvczR2sEEpqg==
-  /@sinonjs/formatio/3.2.2:
-    dependencies:
-      '@sinonjs/commons': 1.6.0
-      '@sinonjs/samsam': 3.3.3
-    dev: false
-    resolution:
-      integrity: sha512-B8SEsgd8gArBLMD6zpRw3juQ2FVSsmdd7qlevyDqzS9WTCtvF55/gAL+h6gue8ZvPYcdiPdvueM/qm//9XzyTQ==
-  /@sinonjs/samsam/3.3.3:
-    dependencies:
-      '@sinonjs/commons': 1.6.0
-      array-from: 2.1.1
-      lodash: 4.17.15
-    dev: false
-    resolution:
-      integrity: sha512-bKCMKZvWIjYD0BLGnNrxVuw4dkWCYsLqFOUWw8VgKF/+5Y+mE7LfHWPIYoDXowH+3a9LsWDMo0uAP8YDosPvHQ==
-  /@sinonjs/text-encoding/0.7.1:
-    dev: false
-    resolution:
-      integrity: sha512-+iTbntw2IZPb/anVDbypzfQa+ay64MW0Zo8aJ8gZPWMMK6/OubMVb6lUPMagqjOPnmtauXnFCACVl3O7ogjeqQ==
   /@types/caseless/0.12.2:
     dev: false
     resolution:
       integrity: sha512-6ckxMjBBD8URvjB6J3NcnuAn5Pkl7t3TizAg+xdlzzQGSPSmBcXf8KoIH0ua/i+tio+ZRUHEXp0HEmvaR4kt0w==
-  /@types/node/12.12.11:
+  /@types/node/12.12.7:
     dev: false
     resolution:
-      integrity: sha512-O+x6uIpa6oMNTkPuHDa9MhMMehlxLAd5QcOvKRjAFsBVpeFWTOPnXbDvILvFgFFZfQ1xh1EZi1FbXxUix+zpsQ==
+      integrity: sha512-E6Zn0rffhgd130zbCbAr/JdXfXkoOUFAKNs/rF8qnafSJ8KYaA/j3oz7dcwal+lYjLA7xvdd5J4wdYpCTlP8+w==
   /@types/request/2.48.3:
     dependencies:
       '@types/caseless': 0.12.2
-      '@types/node': 12.12.11
+      '@types/node': 12.12.7
       '@types/tough-cookie': 2.3.5
       form-data: 2.5.1
     dev: false
@@ -87,7 +45,7 @@ packages:
       integrity: sha512-E+iruNOY8VV9s4JEbe1aNEm6MiszPRr/UfcHMz0TQh1BXSxHK+ASV1R6W4HpjBhSeS+54PIsAMCBmwD06LLsqQ==
   /accepts/1.3.7:
     dependencies:
-      mime-types: 2.1.25
+      mime-types: 2.1.24
       negotiator: 0.6.2
     dev: false
     engines:
@@ -245,10 +203,6 @@ packages:
     dev: false
     resolution:
       integrity: sha1-ml9pkFGx5wczKPKgCJaLZOopVdI=
-  /array-from/2.1.1:
-    dev: false
-    resolution:
-      integrity: sha1-z+nYwmYoudxa7MYqn12PHzUsEZU=
   /array-slice/1.1.0:
     dev: false
     engines:
@@ -306,10 +260,6 @@ packages:
     dev: false
     resolution:
       integrity: sha512-zflvls11DCy+dQWzTW2dzuilv8Z5X/pjfmZOWba6TNIVDm+2UDaJmXSOXlasHKfNBs8oo3M0aT50fDEWfKZjXg==
-  /async/3.1.0:
-    dev: false
-    resolution:
-      integrity: sha512-4vx/aaY6j/j3Lw3fbCHNWP0pPaTCew3F6F3hYyl/tHs/ndmV1q7NW9T5yuJ2XAGwdQrP+6Wu20x06U4APo/iQQ==
   /asynckit/0.4.0:
     dev: false
     resolution:
@@ -321,15 +271,7 @@ packages:
     hasBin: true
     resolution:
       integrity: sha512-Wm6ukoaOGJi/73p/cl2GvLjTI5JM1k/O14isD73YML8StrH/7/lRFgmg8nICZgD3bZZvjwCGxtMOD3wWNAu8cg==
-  /aws-sdk-mock/4.5.0:
-    dependencies:
-      aws-sdk: 2.575.0
-      sinon: 7.5.0
-      traverse: 0.6.6
-    dev: false
-    resolution:
-      integrity: sha512-PAZKbQsdaVVoMr1JZbi04FUrkxCK16qnwBWLm4keeBrEfqYab/cFNsn5IVp/ThdMQpJGYHnmqUPyFq1plKaHZg==
-  /aws-sdk/2.575.0:
+  /aws-sdk/2.568.0:
     dependencies:
       buffer: 4.9.2
       events: 1.1.1
@@ -344,7 +286,7 @@ packages:
     engines:
       node: '>= 0.8.0'
     resolution:
-      integrity: sha512-GgqiThKKmN9CJcGDApJq+TuHkCYIx7A7QF01KPCn2nvxC5efrrJt/0GtrPXe+yJlKh3cl1HQTVobWiSfMV/xhA==
+      integrity: sha512-jPvhiJV2iLyWbJJDM01gvUCzeChWUeRMkIr6dsHu+leH2QnzvGNunTwMGculKE1jouXatajZEoA9bdqfosranw==
   /aws-sign2/0.7.0:
     dev: false
     resolution:
@@ -828,14 +770,6 @@ packages:
     hasBin: true
     resolution:
       integrity: sha512-q/UEjfGJ2Cm3oKV71DJz9d25TPnq5rhBVL2Q4fA5wcC3jcrdn7+SssEybFIxwAvvP+YCsCYNKughoF33GxgycQ==
-  /backoff/2.5.0:
-    dependencies:
-      precond: 0.2.3
-    dev: false
-    engines:
-      node: '>= 0.6'
-    resolution:
-      integrity: sha1-9hbtqdPktmuMp/ynn2lXIsX44m8=
   /balanced-match/1.0.0:
     dev: false
     resolution:
@@ -967,7 +901,7 @@ packages:
   /browserify-des/1.0.2:
     dependencies:
       cipher-base: 1.0.4
-      des.js: 1.0.1
+      des.js: 1.0.0
       inherits: 2.0.4
       safe-buffer: 5.2.0
     dev: false
@@ -1328,7 +1262,6 @@ packages:
     resolution:
       integrity: sha1-Z29us8OZl8LuGsOpJP1hJHSPV40=
   /core-js/2.6.10:
-    deprecated: 'core-js@<3.0 is no longer maintained and not recommended for usage due to the number of issues. Please, upgrade your dependencies to the actual version of core-js@3.'
     dev: false
     requiresBuild: true
     resolution:
@@ -1504,13 +1437,13 @@ packages:
     hasBin: true
     resolution:
       integrity: sha512-1orqXQr5po+3KI6kQb9A4jnXT1PBwggGl2d7Sq2xsnOeI9GPcE/tGcF9UiSZtZBM7MukY4cAh7MemS6tZYipfw==
-  /des.js/1.0.1:
+  /des.js/1.0.0:
     dependencies:
       inherits: 2.0.4
       minimalistic-assert: 1.0.1
     dev: false
     resolution:
-      integrity: sha512-Q0I4pfFrv2VPd34/vfLrFOoRmlYj3OV50i7fskps1jZWK1kApMWWT9G6RRUeYedLcBDIhnSDaUvJMb3AhUlaEA==
+      integrity: sha1-wHTS4qpqipoH29YfmhXCzYPsjsw=
   /destroy/1.0.4:
     dev: false
     resolution:
@@ -1569,15 +1502,6 @@ packages:
     dev: false
     resolution:
       integrity: sha1-ixLauHjA1p4+eJEFFmKjL8a93ME=
-  /dynamo-batchwrite-queue/1.0.1:
-    dependencies:
-      async: 2.6.3
-      aws-sdk: 2.575.0
-    dev: false
-    engines:
-      node: '>=4.3.2'
-    resolution:
-      integrity: sha1-NdYlkZTuO1jRwqpr3k3WrVUPOf4=
   /ecc-jsbn/0.1.2:
     dependencies:
       jsbn: 0.1.1
@@ -1622,10 +1546,10 @@ packages:
       es-to-primitive: 1.2.1
       function-bind: 1.1.1
       has: 1.0.3
-      has-symbols: 1.0.1
+      has-symbols: 1.0.0
       is-callable: 1.1.4
       is-regex: 1.0.4
-      object-inspect: 1.7.0
+      object-inspect: 1.6.0
       object-keys: 1.1.1
       string.prototype.trimleft: 2.1.0
       string.prototype.trimright: 2.1.0
@@ -1921,7 +1845,7 @@ packages:
     dependencies:
       asynckit: 0.4.0
       combined-stream: 1.0.8
-      mime-types: 2.1.25
+      mime-types: 2.1.24
     dev: false
     engines:
       node: '>= 0.12'
@@ -1931,7 +1855,7 @@ packages:
     dependencies:
       asynckit: 0.4.0
       combined-stream: 1.0.8
-      mime-types: 2.1.25
+      mime-types: 2.1.24
     dev: false
     engines:
       node: '>= 0.12'
@@ -2278,12 +2202,12 @@ packages:
       node: '>= 0.10'
     resolution:
       integrity: sha1-ZBTIKRNpfaUVkDl9r7EvIpZ4Ec4=
-  /has-symbols/1.0.1:
+  /has-symbols/1.0.0:
     dev: false
     engines:
       node: '>= 0.4'
     resolution:
-      integrity: sha512-PLcsoqu++dmEIZB+6totNFKq/7Do+Z0u4oT0zKOJNl3lYK6vGwwu2hjHs+68OEZbTjiUE9bgOABXbP/GvrS0Kg==
+      integrity: sha1-uhqPGvKg/DllD1yFA2dwQSIGO0Q=
   /has-value/0.3.1:
     dependencies:
       get-value: 2.0.6
@@ -2705,7 +2629,7 @@ packages:
       integrity: sha512-Kw/ReK0iqwKeu0MITLFuj0jbPAmEiOsIwyIXvvbfa6QfmN9pkD1M+8pdk7Rl/dTKbH34/XBFMbgD4iMJhLQbGA==
   /is-symbol/1.0.2:
     dependencies:
-      has-symbols: 1.0.1
+      has-symbols: 1.0.0
     dev: false
     engines:
       node: '>= 0.4'
@@ -2866,10 +2790,6 @@ packages:
       '0': node >=0.6.0
     resolution:
       integrity: sha1-MT5mvB5cwG5Di8G3SZwuXFastqI=
-  /just-extend/4.0.2:
-    dev: false
-    resolution:
-      integrity: sha512-FrLwOgm+iXrPV+5zDU6Jqu4gCRXbWEQg2O3SKONsWE4w7AXFRkryS53bpWdaL9cNol+AmR3AEYz6kn+o0fCPnw==
   /kind-of/3.2.2:
     dependencies:
       is-buffer: 1.1.6
@@ -2920,18 +2840,6 @@ packages:
       node: '>= 0.8'
     resolution:
       integrity: sha1-IAkpG7Mc6oYbvxCnwVooyvdcMew=
-  /live-mutex/0.2.21:
-    dependencies:
-      '@oresoftware/json-stream-parser': 0.0.124
-      '@oresoftware/linked-queue': 0.1.106
-      chalk: 2.4.2
-      tcp-ping: 0.1.1
-      uuid: 3.3.3
-    dev: false
-    hasBin: true
-    requiresBuild: true
-    resolution:
-      integrity: sha512-sRYR126RVfqfeZs3AWBjCKufw10CM8IaXGmxxcFolijiIVXLTWeDPl/H2teL+aZyewGG8oSciKhfn+jPE6GLVg==
   /locate-path/3.0.0:
     dependencies:
       p-locate: 3.0.0
@@ -3104,10 +3012,6 @@ packages:
       node: '>=6.0'
     resolution:
       integrity: sha512-EEEgFcE9bLgaYUKuozyFfytQM2wDHtXn4tAN41pkaxpNjAykv11GVdeI4tHtmPWW4Xrgh9R/2d7XYghDVjbKKw==
-  /lolex/4.2.0:
-    dev: false
-    resolution:
-      integrity: sha512-gKO5uExCXvSm6zbF562EvM+rd1kQDnB9AZBbiQVzf1ZmdDpxUSvpnAaVOP83N/31mRK8Ml8/VE8DMvsAZQ+7wg==
   /loose-envify/1.4.0:
     dependencies:
       js-tokens: 4.0.0
@@ -3215,20 +3119,20 @@ packages:
     hasBin: true
     resolution:
       integrity: sha512-115fLhvZVqWwHPbClyntxEVfVDfl9DLLTuJvq3g2O/Oxi8AiNouAHvDSzHS0viUJc+V5vm3eq91Xwqn9dp4jRA==
-  /mime-db/1.42.0:
+  /mime-db/1.40.0:
     dev: false
     engines:
       node: '>= 0.6'
     resolution:
-      integrity: sha512-UbfJCR4UAVRNgMpfImz05smAXK7+c+ZntjaA26ANtkXLlOe947Aag5zdIcKQULAiF9Cq4WxBi9jUs5zkA84bYQ==
-  /mime-types/2.1.25:
+      integrity: sha512-jYdeOMPy9vnxEqFRRo6ZvTZ8d9oPb+k18PKoYNYUe2stVEBPPwsln/qWzdbmaIvnhZ9v2P+CuecK+fpUfsV2mA==
+  /mime-types/2.1.24:
     dependencies:
-      mime-db: 1.42.0
+      mime-db: 1.40.0
     dev: false
     engines:
       node: '>= 0.6'
     resolution:
-      integrity: sha512-5KhStqB5xpTAeGqKBAMgwaYMnQik7teQN4IAzC7npDv6kzeU6prfkR67bc87J1kWMPGkoaZSq1npmexMgkmEVg==
+      integrity: sha512-WaFHS3MCl5fapm3oLxU4eYDw77IQM2ACcxQ9RIxfaC3ooc6PFuBMGZZsYpvoXS5D5QTWPieo1jjLdAm3TBP3cQ==
   /mime/1.6.0:
     dev: false
     engines:
@@ -3396,16 +3300,6 @@ packages:
       node: '>= 0.6'
     resolution:
       integrity: sha512-hZXc7K2e+PgeI1eDBe/10Ard4ekbfrrqG8Ep+8Jmf4JID2bNg7NvCPOZN+kfF574pFQI7mum2AUqDidoKqcTOw==
-  /nise/1.5.2:
-    dependencies:
-      '@sinonjs/formatio': 3.2.2
-      '@sinonjs/text-encoding': 0.7.1
-      just-extend: 4.0.2
-      lolex: 4.2.0
-      path-to-regexp: 1.8.0
-    dev: false
-    resolution:
-      integrity: sha512-/6RhOUlicRCbE9s+94qCUsyE+pKlVJ5AhIv+jEE7ESKwnbXqulKZ1FYU+XAtHHWE9TinYvAxDUJAb912PwPoWA==
   /node-emoji/1.10.0:
     dependencies:
       lodash.toarray: 4.4.0
@@ -3481,10 +3375,10 @@ packages:
       node: '>=0.10.0'
     resolution:
       integrity: sha1-fn2Fi3gb18mRpBupde04EnVOmYw=
-  /object-inspect/1.7.0:
+  /object-inspect/1.6.0:
     dev: false
     resolution:
-      integrity: sha512-a7pEHdh1xKIAgTySUGgLMx/xwDZskN1Ud6egYYN3EdRW4ZMPNEDUTF+hwy2LUC+Bl+SyLXANnwz/jyh/qutKUw==
+      integrity: sha512-GJzfBZ6DgDAmnuaM3104jR4s1Myxr3Y3zfIyN4z3UdqN69oSRacNK8UhnobDdC+7J2AHCjGwxQubNJfE70SXXQ==
   /object-keys/0.4.0:
     dev: false
     resolution:
@@ -3507,7 +3401,7 @@ packages:
     dependencies:
       define-properties: 1.1.3
       function-bind: 1.1.1
-      has-symbols: 1.0.1
+      has-symbols: 1.0.0
       object-keys: 1.1.1
     dev: false
     engines:
@@ -3720,12 +3614,6 @@ packages:
     dev: false
     resolution:
       integrity: sha1-32BBeABfUi8V60SQ5yR6G/qmf4w=
-  /path-to-regexp/1.8.0:
-    dependencies:
-      isarray: 0.0.1
-    dev: false
-    resolution:
-      integrity: sha512-n43JRhlUKUAlibEJhPeir1ncUID16QnEjNpwzNdO3Lm4ywrBpBZ5oLD0I6br9evr1Y9JTqwRtAh7JLoOzAQdVA==
   /pbkdf2/3.0.17:
     dependencies:
       create-hash: 1.2.0
@@ -3763,12 +3651,6 @@ packages:
       node: '>=0.10.0'
     resolution:
       integrity: sha1-AerA/jta9xoqbAL+q7jB/vfgDqs=
-  /precond/0.2.3:
-    dev: false
-    engines:
-      node: '>= 0.6'
-    resolution:
-      integrity: sha1-qpWRvKokkj8eD0hJ0kD0fvwQdaw=
   /prepend-file/1.3.1:
     dependencies:
       tmp: 0.0.31
@@ -4050,7 +3932,7 @@ packages:
       is-typedarray: 1.0.0
       isstream: 0.1.2
       json-stringify-safe: 5.0.1
-      mime-types: 2.1.25
+      mime-types: 2.1.24
       oauth-sign: 0.9.0
       performance-now: 2.1.0
       qs: 6.5.2
@@ -4244,18 +4126,6 @@ packages:
     dev: false
     resolution:
       integrity: sha1-c0TLuLbib7J9ZrL8hvn21Zl1IcY=
-  /sinon/7.5.0:
-    dependencies:
-      '@sinonjs/commons': 1.6.0
-      '@sinonjs/formatio': 3.2.2
-      '@sinonjs/samsam': 3.3.3
-      diff: 3.5.0
-      lolex: 4.2.0
-      nise: 1.5.2
-      supports-color: 5.5.0
-    dev: false
-    resolution:
-      integrity: sha512-AoD0oJWerp0/rY9czP/D6hDTTUYGpObhZjMpd7Cl/A6+j0xBE+ayL/ldfggkBXUs0IkvIiM1ljM8+WkOc5k78Q==
   /slash/1.0.0:
     dev: false
     engines:
@@ -4583,10 +4453,6 @@ packages:
     dev: false
     resolution:
       integrity: sha512-YPPlu67mdnHGTup2A8ff7BC2Pjq0e0Yp/IyTFN03zWO0RcK07uLcbi7C2KpGR2FvWbaB0+bfE27a+sBKebSo7w==
-  /tcp-ping/0.1.1:
-    dev: false
-    resolution:
-      integrity: sha1-At1/QrW/fXy3jVt6rO+hVf2PfAw=
   /through/2.3.8:
     dev: false
     resolution:
@@ -4695,10 +4561,6 @@ packages:
       node: '>=0.8'
     resolution:
       integrity: sha512-Q5srk/4vDM54WJsJio3XNn6K2sCG+CQ8G5Wz6bZhRZoAe/+TxjWB/GlFAnYEbkYVlON9FMk/fE3h2RLpPXo4lQ==
-  /traverse/0.6.6:
-    dev: false
-    resolution:
-      integrity: sha1-y99WD9e5r2MlAv7UD5GMFX6pcTc=
   /trim-right/1.0.1:
     dev: false
     engines:
@@ -4729,16 +4591,10 @@ packages:
       node: '>=0.10.0'
     resolution:
       integrity: sha512-BkdwvZGRVoUTcEBp0zuocuqfih4LB+kEFUWkWJOVBg6pAE9Ebv9vmsYTTrfXleZGf45Bj5H3A1/O9YhF2uSYNg==
-  /type-detect/4.0.8:
-    dev: false
-    engines:
-      node: '>=4'
-    resolution:
-      integrity: sha512-0fr/mIH1dlO+x7TlcMy+bIDqKPsw/70tVyeHW787goQjhmqaZe10uwLujubK9q9Lg6Fiho1KUKDYz0Z7k7g5/g==
   /type-is/1.6.18:
     dependencies:
       media-typer: 0.3.0
-      mime-types: 2.1.25
+      mime-types: 2.1.24
     dev: false
     engines:
       node: '>= 0.6'
@@ -5099,22 +4955,16 @@ registry: 'https://registry.npmjs.org/'
 shrinkwrapMinorVersion: 9
 shrinkwrapVersion: 3
 specifiers:
-  async: ^3.1.0
   aws-sdk: '*'
-  aws-sdk-mock: ^4.5.0
-  backoff: ^2.5.0
-  dynamo-batchwrite-queue: ^1.0.1
   express: ^4.14.0
   interface.js: ^2.0.0
   json2html: '*'
-  live-mutex: ^0.2.21
   log4js: ^4.0.2
   mocha: ^6.2.1
   n-readlines: '*'
   node-localstorage: ^1.3.1
   prepend-file: '*'
   request: ^2.88.0
-  sinon: ^7.5.0
   soap: '*'
   twit: ^2.1.0
   uuid: '*'
