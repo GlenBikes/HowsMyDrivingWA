@@ -9,19 +9,21 @@ module.exports = {
 
 /* Setting things up. */
 const AWS = require("aws-sdk"),
+  convert = require("xml-js"),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),
   LocalStorage = require('node-localstorage').LocalStorage,
   log4js = require('log4js'),
-  seattle = require("./opendata/seattle"),
   path = require("path"),
-  soap = require("soap"),
-  Twit = require("twit"),
   Q = require('./util/batch-write-queue.js'),
+  seattle = require("./opendata/seattle"),
+  soap = require("soap"),
   strUtils = require('./util/stringutils.js'),
-  convert = require("xml-js"),
+  Twit = require("twit"),
   uuidv1 = require("uuid/v1");
+
+var {LMXClient, LMXBroker} = require('live-mutex');
 
 var app = express(),
   config = {
@@ -35,6 +37,15 @@ var app = express(),
   
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
+
+// Global mutex - can create multiple named locks
+const Mutex = new LMXClient();
+
+// Mutex to ensure we don't post tweets in quick succession
+const MUTEX_NAME_TWIT_POST = 'twitter_post',
+      MUTEX_TWIT_POST_MAX_HOLD_MS = 10000,
+      MUTEX_TWIT_POST_MAX_RETRIES = 5,
+      MUTEX_TWIT_POST_MAX_WAIT_MS = 30000;
 
 process.setMaxListeners(15);
     
@@ -577,69 +588,107 @@ app.all("/processreportitems", function(request, response) {
 
         // Now process the report_items, on a per-request basis
         Object.keys(reportItemsByRequest).forEach(request_id => {
-          var request_promise = new Promise( (resolve, reject) => {
-          // Get the first report_item to access report_item columns
-          var report_item = reportItemsByRequest[request_id][0];
-          // Build a fake tweet for the request report_item
-          var origTweet = {
-            id: report_item.tweet_id,
-            id_str: report_item.tweet_id_str,
-            user: {
-              screen_name: report_item.tweet_user_screen_name
-            }
-          };
+          var request_promise = new Promise((resolve, reject) => {
+            // Get the first report_item to access report_item columns
+            var report_item = reportItemsByRequest[request_id][0];
+            // Build a fake tweet for the request report_item
+            var origTweet = {
+              id: report_item.tweet_id,
+              id_str: report_item.tweet_id_str,
+              user: {
+                screen_name: report_item.tweet_user_screen_name
+              }
+            };
 
-          // Send a copy of the report items to SendResponse since we need to
-          SendResponses(T, origTweet, reportItemsByRequest[request_id])
-            .then(() => {
-              log.debug(`Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`);
-            
-              // Set the processing status of all the report_items
-              var report_item_records = [];
-              var now = Date.now();
-              // Now that the record is PROCESSED, TTL is 1 month 
-              var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+            log.debug(`Creating mutex for SendResponses...`);
+            Promise.all([
+              new LMXBroker().ensure(),
+              new LMXClient().connect()
+            ]).then(function([broker, client]) {
+              log.debug(`Created mutex for SendResponses.`);
 
-              reportItemsByRequest[request_id].forEach(report_item => {
-                report_item.processing_status = "PROCESSED";
-                report_item.modified = now;
-                report_item.ttl_expire = ttl_expire;
+              broker.emitter.on("warning", function() {
+                log.debug(...arguments);
+              });
 
-                report_item_records.push({
-                  PutRequest: {
-                    Item: report_item
-                  }
+              client.emitter.on("warning", function() {
+                log.debug(...arguments);
+              });
+
+              // Send a copy of the report items to SendResponse since we need to
+              SendResponses(
+                client,
+                T,
+                origTweet,
+                reportItemsByRequest[request_id]
+              )
+                .then(() => {
+                  log.info(
+                    `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
+                  );
+
+                  log.debug(`Closing mutex for SendResponses.`);
+                  client.close();
+
+                  // Set the processing status of all the report_items
+                  var report_item_records = [];
+                  var now = Date.now();
+                  // Now that the record is PROCESSED, TTL is 1 month
+                  var ttl_expire = new Date(now).setFullYear(
+                    new Date(now).getFullYear() + 10
+                  );
+
+                  reportItemsByRequest[request_id].forEach(report_item => {
+                    report_item.processing_status = "PROCESSED";
+                    report_item.modified = now;
+                    report_item.ttl_expire = ttl_expire;
+
+                    report_item_records.push({
+                      PutRequest: {
+                        Item: report_item
+                      }
+                    });
+                  });
+
+                  batchWriteWithExponentialBackoff(
+                    new AWS.DynamoDB.DocumentClient(),
+                    tableNames["ReportItems"],
+                    report_item_records
+                  )
+                    .then(() => {
+                      // This is the one and only success point for these report item records.
+                      // Every other codepath is an error of some kind.
+                      resolve();
+                    })
+                    .catch(err => {
+                      handleError(err);
+                    });
+                })
+                .catch(err => {
+                  handleError(err);
                 });
-              });
-            
-              batchWriteWithExponentialBackoff(
-                new AWS.DynamoDB.DocumentClient(),
-                tableNames["ReportItems"], 
-                report_item_records).then( () => {
-                // This is the one and only success point for these report item records.
-                // Every other codepath is an error of some kind.
-                resolve();
-              }).catch( (err) => {
-                handleError(err);
-              });
-            })
-            .catch(err => {
-              handleError(err);
             });
-        });
-          
-          request_promises.push(request_promise);
+
+            request_promises.push(request_promise);
+          });
+
+          log.info(
+            `Sent ${reportItemsByRequest[request_id].legth} tweets for request ${request_id}.`
+          );
         });
       } else {
         log.debug("No report items found.");
       }
-    
-    Promise.all(request_promises).then( () => {
-      // Tweets for all the requests have completed successfully
-        response.sendStatus(200);
-    }).catch( (err) => {
-      handleError(err);
-    });
+
+      Promise.all(request_promises)
+        .then(() => {
+          // Tweets for all the requests have completed successfully
+          log.info(`Finished sending ${1} tweets for request ${1}.`);
+          response.sendStatus(200);
+        })
+        .catch(err => {
+          handleError(err);
+        });
     })
     .catch(function(err) {
       response.status(500).send(err);
@@ -750,7 +799,6 @@ function processNewTweets(T, docClient, bot_app_id) {
           log.debug("No new mentions...");
         }
 
-        log.info(`Waiting on ${twitter_promises.length} twitter_promises.`);
         Promise.all(twitter_promises)
           .then(() => {
             // Update the ids of the last tweet/dm if we processed
@@ -992,7 +1040,7 @@ async function GetQueryCount(license) {
   });
 }
 
-function SendResponses(T, origTweet, report_items) {
+function SendResponses(mutex_client, T, origTweet, report_items) {
   if (report_items.length == 0) {
     // return an promise that is already resolved, ending the recursive
     // chain of promises that have been built.
@@ -1009,61 +1057,87 @@ function SendResponses(T, origTweet, report_items) {
   var tweetText = "@" + replyToScreenName + " " + report_item.tweet_text;
   log.debug(`Sending Tweet: ${tweetText}.`);
   return new Promise((resolve, reject) => {
-    T.post(
-      "statuses/update",
-      {
-        status: tweetText,
-        in_reply_to_status_id: replyToTweetId,
-        auto_populate_reply_metadata: true
-      },
-      function(err, data, response) {
-        if (err && err.code != 187) {
-          if (err.code == 187) {
-            resolve();
-            return;
-          } else {
-            handleError(err);
-          }
-        } else {
-          if (err && err.code == 187) {
-            // This appears to be a "status is a duplicate" error which
-            // means we are trying to resend a tweet we already sent.
-            // Pretend we succeeded.
-            log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
-            
-            // Keep replying to the tweet we were told to reply to.
-            // This means that in this scenario, if any of the rest of the tweets in this
-            // thread have not been sent, they will create a new thread off the parent of
-            // this one.
-            // Not ideal, but the other alternatives are:
-            // 1) Query for the previous duplicate tweet and then pass that along
-            // 2) set all of the replies for this request to be PROCESSED even if they did not 
-            //    all get tweeted.
-            data = origTweet;
-          }
-          else {
-            log.debug(`Sent tweet: ${printTweet(data)}.`);
-          }
-
-          // Wait a bit. It seems tweeting a whackload of tweets in quick succession
-          // can cause Twitter to think you're a troll bot or something and then some
-          // of the tweets will not display for users other than the bot account.
-          // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-          sleep(INTER_TWEET_DELAY_MS).then(() => {
-            // Send the rest of the responses. When those are sent, then resolve
-            // the local Promise.
-            SendResponses(T, data, report_items_clone)
-              .then(tweet => {
-                resolve(data);
-              })
-              .catch(err => {
+    // There will be one thread running this for each request we are
+    // processing. We need to make sure we don't send tweets in quick
+    // succession or Twitter will tag them as spam and they won't
+    // render i the thread of resposes.
+    // So wait at least INTER_TWEET_DELAY_MS ms between posts.
+    log.debug(`Acquiring mutex ${MUTEX_NAME_TWIT_POST}...`);
+    debugger;
+    
+    
+    mutex_client.acquire(MUTEX_NAME_TWIT_POST, {
+      ttl: MUTEX_TWIT_POST_MAX_HOLD_MS, 
+      retries: MUTEX_TWIT_POST_MAX_RETRIES, 
+      lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
+    }).then(({id, key}) => {
+          log.debug(`Acquired mutex ${MUTEX_NAME_TWIT_POST}.`);
+          T.post(
+            "statuses/update",
+            {
+              status: tweetText,
+              in_reply_to_status_id: replyToTweetId,
+              auto_populate_reply_metadata: true
+            },
+            function(err, data, response) {
+              if (err && err.code != 187) {
+                log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
+                log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
                 handleError(err);
-              });
-          });
-        }
-      }
-    );
-  });
+              } else {
+                if (err && err.code == 187) {
+                  // This appears to be a "status is a duplicate" error which
+                  // means we are trying to resend a tweet we already sent.
+                  // Pretend we succeeded.
+                  log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
+
+                  // Keep replying to the tweet we were told to reply to.
+                  // This means that in this scenario, if any of the rest of the tweets in this
+                  // thread have not been sent, they will create a new thread off the parent of
+                  // this one.
+                  // Not ideal, but the other alternatives are:
+                  // 1) Query for the previous duplicate tweet and then pass that along
+                  // 2) set all of the replies for this request to be PROCESSED even if they did not 
+                  //    all get tweeted.
+                  data = origTweet;
+                }
+                else {
+                  log.debug(`Sent tweet: ${printTweet(data)}.`);
+                }
+
+                // Wait a bit. It seems tweeting a whackload of tweets in quick succession
+                // can cause Twitter to think you're a troll bot or something and then some
+                // of the tweets will not display for users other than the bot account.
+                // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
+                sleep(INTER_TWEET_DELAY_MS).then(() => {
+                  // Don't release the mutex until after we sleep.
+                  log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
+                  mutex_client.release(key, id).then(v => {
+                    log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
+                  
+                    // Send the rest of the responses. When those are sent, then resolve
+                    // the local Promise.
+                    SendResponses(mutex_client, T, data, report_items_clone)
+                      .then(tweet => {
+                        resolve(data);
+                      })
+                      .catch(err => {
+                        handleError(err);
+                      });
+                  }).catch( (err) => {
+                    log.debug(`Error closing mutex ${MUTEX_NAME_TWIT_POST}.`);
+                    handleError(err);
+                  });
+                    
+                });
+              }
+            }
+          );
+        });
+      })
+      .catch(e => {
+        handleError(e);
+      });
 }
 
 function getLastDmId() {
