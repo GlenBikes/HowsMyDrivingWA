@@ -7,7 +7,7 @@ state and nnnnnnn is the license plate number (e.g. WA:ABC1234Q) and the bot
 will reply with all the citations for that license plate in the King County
 Court database.
 
-Find this useful? Buy @GlenBikes a coffee:
+Find this useful? [Buy @GlenBikes a coffee](https://www.buymeacoffee.com/GlenBikes)
 
 **Powered by [Glitch](https://glitch.com)**
 

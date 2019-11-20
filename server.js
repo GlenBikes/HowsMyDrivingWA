@@ -60,7 +60,7 @@ const MAX_RECORDS_BATCH = 2000,
     process.env.hasOwnProperty("INTER_TWEET_DELAY_MS") &&
     process.env.INTER_TWEET_DELAY_MS > 0
       ? process.env.INTER_TWEET_DELAY_MS
-      : 1000,
+      : 5000,
   tableNames = {
     Request: `${process.env.DB_PREFIX}_Request`,
     Citations: `${process.env.DB_PREFIX}_Citations`,
