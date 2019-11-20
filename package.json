@@ -9,13 +9,13 @@
   },
   "dependencies": {
     "async": "^3.1.0",
-    "aws-sdk": "*",
+    "aws-sdk": "^2.575.0",
     "aws-sdk-mock": "^4.5.0",
     "backoff": "^2.5.0",
+    "clean-package-json": "^1.0.3",
     "dynamo-batchwrite-queue": "^1.0.1",
     "express": "^4.14.0",
     "interface.js": "^2.0.0",
-    "json2html": "*",
     "live-mutex": "^0.2.21",
     "log4js": "^4.0.2",
     "mocha": "^6.2.1",
@@ -24,10 +24,10 @@
     "request": "^2.88.0",
     "prepend-file": "*",
     "sinon": "^7.5.0",
-    "soap": "*",
+    "soap": "^0.30.0",
     "twit": "^2.1.0",
-    "uuid": "*",
-    "xml-js": "*"
+    "uuid": "^3.3.3",
+    "xml-js": "^1.6.11"
   },
   "engines": {
     "node": "10.x"
