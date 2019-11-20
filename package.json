@@ -16,6 +16,7 @@
     "express": "^4.14.0",
     "interface.js": "^2.0.0",
     "json2html": "*",
+    "live-mutex": "^0.2.21",
     "log4js": "^4.0.2",
     "mocha": "^6.2.1",
     "n-readlines": "*",
