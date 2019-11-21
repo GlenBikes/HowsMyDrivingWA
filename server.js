@@ -116,6 +116,8 @@ app.all("/tweet", function(request, response) {
     } catch ( err ) {
       response.status(500).send(err);
     }
+  }).catch( (err) => {
+    handleError(err);
   });
 });
 
@@ -213,7 +215,7 @@ app.all("/dumpcitations", function(request, response) {
 
   seattle
     .GetCitationsByPlate(plate, state)
-    .then(function(citations) {
+    .then( (citations) => {
       var body = "Citations found:\n";
 
       if (!citations || citations.length == 0) {
@@ -250,7 +252,7 @@ app.all("/processrequests", function(request, response) {
     var docClient = new AWS.DynamoDB.DocumentClient();
 
     GetRequestRecords()
-      .then(request_records => {
+      .then( (request_records) => {
         var request_promises = [];
       
         if (request_records && request_records.length > 0) {
@@ -301,7 +303,7 @@ app.all("/processrequests", function(request, response) {
                   new AWS.DynamoDB.DocumentClient(),
                   tableNames["Citations"],
                   citation_records
-                ).then(() => {
+                ).then( () => {
                       var params = {
                         TableName: tableNames["Request"],
                         Key: {
@@ -330,7 +332,7 @@ app.all("/processrequests", function(request, response) {
                       handleError(e);
                     });
               } else {
-                seattle.GetCitationsByPlate(plate, state).then(function(citations) {
+                seattle.GetCitationsByPlate(plate, state).then( (citations) => {
                   if (!citations || citations.length == 0) {
                     var now = Date.now();
                     // TTL is 10 years from now until the records are PROCESSED
@@ -432,6 +434,8 @@ app.all("/processrequests", function(request, response) {
                   }).catch( (err) => {
                     handleError(err);
                   });
+                }).catch( (err) => {
+                  handleError(err);
                 });
               }
             });
@@ -462,7 +466,7 @@ app.all("/processcitations", function(request, response) {
   try {
     var docClient = new AWS.DynamoDB.DocumentClient();
 
-    GetCitationRecords().then(function(citations) {
+    GetCitationRecords().then( (citations) => {
       var request_promises = [];
       
       if (citations && citations.length > 0) {
@@ -488,10 +492,10 @@ app.all("/processcitations", function(request, response) {
             var citation = citationsByRequest[request_id][0];
             seattle
               .ProcessCitationsForRequest(citationsByRequest[request_id])
-              .then(report_items => {
+              .then( (report_items) => {
                 // Write report items
                 WriteReportItemRecords(docClient, request_id, citation, report_items)
-                  .then(function(results) {
+                  .then( (results) => {
                     log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
                     // Set the processing status of all the citations
                     var citation_records = [];
@@ -514,7 +518,8 @@ app.all("/processcitations", function(request, response) {
                     batchWriteWithExponentialBackoff(
                       new AWS.DynamoDB.DocumentClient(),
                       tableNames["Citations"], 
-                      citation_records).then( () => {
+                      citation_records
+                    ).then( () => {
                       log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
                       // This is the one success point for this request.
                       // All other codepaths indicate a failure.
@@ -546,6 +551,8 @@ app.all("/processcitations", function(request, response) {
       }).catch( (err) => {
         handleError(err);
       });
+    }).catch( (err) => {
+      handleError(err);
     });
   } catch (err) {
     response.status(500).send(err);
@@ -560,7 +567,7 @@ app.all("/processreportitems", function(request, response) {
   log.info(`Checking for report items...`);
 
   GetReportItemRecords()
-    .then(function(report_items) {
+    .then( (report_items) => {
       var reportitem_count = report_items.length;
       var tweet_count = 0;
 
@@ -602,7 +609,7 @@ app.all("/processreportitems", function(request, response) {
 
             log.debug(`Creating mutex for SendResponses...`);
             Promise.all([new LMXBroker().ensure(), new LMXClient().connect()])
-              .then(function([broker, client]) {
+              .then( ([broker, client]) => {
                 log.debug(`Created mutex for SendResponses.`);
 
                 broker.emitter.on("warning", function() {
@@ -620,7 +627,7 @@ app.all("/processreportitems", function(request, response) {
                   origTweet,
                   reportItemsByRequest[request_id]
                 )
-                  .then(() => {
+                  .then( () => {
                     log.info(
                       `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
                     );
@@ -657,7 +664,7 @@ app.all("/processreportitems", function(request, response) {
                       tableNames["ReportItems"],
                       report_item_records
                     )
-                    .then(() => {
+                    .then( () => {
                       // This is the one and only success point for these report item records.
                       // Every other codepath is an error of some kind.
                       resolve();
@@ -685,7 +692,7 @@ app.all("/processreportitems", function(request, response) {
       }
 
       Promise.all(request_promises)
-        .then(() => {
+        .then( () => {
           if (request_promises.length > 0) {
             log.info(
               `Sent ${tweet_count} tweets for ${reportitem_count} report items.`
@@ -812,7 +819,7 @@ function processNewTweets(T, docClient, bot_app_id) {
         }
 
         Promise.all(twitter_promises)
-          .then(() => {
+          .then( () => {
             if (num_tweets > 0) {
               log.info(`Wrote ${num_request_records} request records for ${num_tweets} tweets.`)
             }
@@ -1086,7 +1093,7 @@ function SendResponses(mutex_client, T, origTweet, report_items) {
       ttl: MUTEX_TWIT_POST_MAX_HOLD_MS, 
       retries: MUTEX_TWIT_POST_MAX_RETRIES, 
       lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-    }).then(({id, key}) => {
+    }).then( ({id, key}) => {
           log.debug(`Acquired mutex ${MUTEX_NAME_TWIT_POST}.`);
           T.post(
             "statuses/update",
@@ -1125,10 +1132,10 @@ function SendResponses(mutex_client, T, origTweet, report_items) {
                 // can cause Twitter to think you're a troll bot or something and then some
                 // of the tweets will not display for users other than the bot account.
                 // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-                sleep(INTER_TWEET_DELAY_MS).then(() => {
+                sleep(INTER_TWEET_DELAY_MS).then( () => {
                   // Don't release the mutex until after we sleep.
                   log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
-                  mutex_client.release(key, id).then(v => {
+                  mutex_client.release(key, id).then( (v) => {
                     log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
                   
                     // Send the rest of the responses. When those are sent, then resolve
@@ -1145,10 +1152,14 @@ function SendResponses(mutex_client, T, origTweet, report_items) {
                     handleError(err);
                   });
                     
+                }).catch( (err) => {
+                  handleError(err);
                 });
               }
             }
           );
+        }).catch( (err) => {
+          handleError(err);
         });
       })
       .catch(e => {
@@ -1268,8 +1279,10 @@ function getTweetById(T, id) {
     });
   });
 
-  promise.then(function(tweet) {
+  promise.then( (tweet) => {
     return tweet;
+  }).catch( (err) => {
+    handleError(err);
   });
 }
 
