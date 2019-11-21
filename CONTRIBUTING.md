@@ -1,4 +1,4 @@
-@HowsMyDrivingWA
+[@HowsMyDrivingWA](http://twitter.com/HowsMyDrivingWA)
 ================
 
 First off, thank you for considering contributing to @HowsMyDrivingWA. This was started as just a personal interest project after seeing @HowsMyDrivingNY and wanting to figure out if it was possible to do the same for Seattle.

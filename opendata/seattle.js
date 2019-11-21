@@ -1,6 +1,3 @@
-// TODO: Remove this dependency
-var server = require('../server');
-
 const MINIMUM_CITATION_ID = 0,
   noPlateFoundCitationNumber = -1,
   noCitationsFoundCitationNumber = -2;
@@ -15,16 +12,18 @@ module.exports = {
 };
 
 // modules
-var express = require("express"),
+var chokidar = require('chokidar'),
+    express = require("express"),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     log4js = require('log4js'),
+    logging = require('../util/logging.js'),
     path = require("path"),
-    soap = require("soap");
+    server = require('../server'),
+    soap = require("soap"),
+    strUtils = require("../util/stringutils.js");
 
-// Log files
-log4js.configure('config/log4js.json');
-var log = log4js.getLogger();
+var log = logging._log;
 
 var app = express();
 

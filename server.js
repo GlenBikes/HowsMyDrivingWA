@@ -9,18 +9,20 @@ module.exports = {
 
 /* Setting things up. */
 const AWS = require("aws-sdk"),
+  chokidar = require('chokidar'),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),
+  logging = require("./util/logging.js"),
   LocalStorage = require('node-localstorage').LocalStorage,
-  log4js = require('log4js'),
   path = require("path"),
   Q = require('./util/batch-write-queue.js'),
   seattle = require("./opendata/seattle"),
   soap = require("soap"),
   strUtils = require('./util/stringutils.js'),
   Twit = require("twit"),
-  uuidv1 = require("uuid/v1");
+  uuidv1 = require("uuid/v1"),
+  watchr = require('watchr');
 
 var {LMXClient, LMXBroker} = require('live-mutex');
 
@@ -37,9 +39,6 @@ var app = express(),
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
 
-// Global mutex - can create multiple named locks
-const Mutex = new LMXClient();
-
 // Mutex to ensure we don't post tweets in quick succession
 const MUTEX_NAME_TWIT_POST = 'twitter_post',
       MUTEX_TWIT_POST_MAX_HOLD_MS = 10000,
@@ -48,12 +47,6 @@ const MUTEX_NAME_TWIT_POST = 'twitter_post',
 
 process.setMaxListeners(15);
     
-
-// Log files
-log4js.configure('config/log4js.json');
-var log = log4js.getLogger(),
-    lastdmLog = log4js.getLogger("_lastdm"),
-    lastmentionLog = log4js.getLogger("_lastmention");
 
 const MAX_RECORDS_BATCH = 2000,
   INTER_TWEET_DELAY_MS =
@@ -68,6 +61,10 @@ const MAX_RECORDS_BATCH = 2000,
   };
 
 module.exports._tableNames = tableNames;
+
+var log = logging._log,
+    lastdmLog = logging._lastdmLog,
+    lastmentionLog = logging._lastmentionLog;
 
 log.info(`${process.env.TWITTER_HANDLE}: start`);
 
@@ -102,8 +99,6 @@ app.all("/tweet", function(request, response) {
   
   // We need the bot's app id to detect tweets from the bot
   getAccountID(T).then( ( app_id ) => {
-    log.info(`app_id in tweet: ${app_id}.`);
-    
     try {
       var twitter_promises = [];
       var tweet_process_promise = processNewTweets(T, docClient, app_id);
@@ -189,7 +184,8 @@ app.all("/dumpfile", function(request, response) {
 app.all("/dumptweet", function(request, response) {
   try {
     if (request.query.hasOwnProperty("id")) {
-      var tweet = getTweetById(request.query.id);
+      const T = new Twit(config.twitter);
+      var tweet = getTweetById(T, request.query.id);
       response.set("Cache-Control", "no-store");
       response.json(tweet);
     } else {
@@ -561,8 +557,13 @@ app.all("/processreportitems", function(request, response) {
   var docClient = new AWS.DynamoDB.DocumentClient();
   var request_promises = [];
 
+  log.info(`Checking for report items...`);
+
   GetReportItemRecords()
     .then(function(report_items) {
+      var reportitem_count = report_items.length;
+      var tweet_count = 0;
+
       if (report_items && report_items.length > 0) {
         var reportItemsByRequest = {};
 
@@ -600,60 +601,62 @@ app.all("/processreportitems", function(request, response) {
             };
 
             log.debug(`Creating mutex for SendResponses...`);
-            Promise.all([
-              new LMXBroker().ensure(),
-              new LMXClient().connect()
-            ]).then(function([broker, client]) {
-              log.debug(`Created mutex for SendResponses.`);
+            Promise.all([new LMXBroker().ensure(), new LMXClient().connect()])
+              .then(function([broker, client]) {
+                log.debug(`Created mutex for SendResponses.`);
 
-              broker.emitter.on("warning", function() {
-                log.debug(...arguments);
-              });
+                broker.emitter.on("warning", function() {
+                  log.debug(...arguments);
+                });
 
-              client.emitter.on("warning", function() {
-                log.debug(...arguments);
-              });
+                client.emitter.on("warning", function() {
+                  log.debug(...arguments);
+                });
 
-              // Send a copy of the report items to SendResponse since we need to
-              SendResponses(
-                client,
-                T,
-                origTweet,
-                reportItemsByRequest[request_id]
-              )
-                .then(() => {
-                  log.info(
-                    `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
-                  );
+                // Send a copy of the report items to SendResponse since we need to
+                SendResponses(
+                  client,
+                  T,
+                  origTweet,
+                  reportItemsByRequest[request_id]
+                )
+                  .then(() => {
+                    log.info(
+                      `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
+                    );
 
-                  log.debug(`Closing mutex for SendResponses.`);
-                  client.close();
+                    tweet_count =
+                      tweet_count + reportItemsByRequest[request_id].length;
+                    log.info(`Interim tweet_count: ${tweet_count}.`);
 
-                  // Set the processing status of all the report_items
-                  var report_item_records = [];
-                  var now = Date.now();
-                  // Now that the record is PROCESSED, TTL is 1 month
-                  var ttl_expire = new Date(now).setFullYear(
-                    new Date(now).getFullYear() + 10
-                  );
+                    log.debug(`Closing mutex for SendResponses.`);
+                    client.close();
 
-                  reportItemsByRequest[request_id].forEach(report_item => {
-                    report_item.processing_status = "PROCESSED";
-                    report_item.modified = now;
-                    report_item.ttl_expire = ttl_expire;
+                    // Set the processing status of all the report_items
+                    var report_item_records = [];
+                    var now = Date.now();
+                    // Now that the record is PROCESSED, TTL is 1 month
+                    var ttl_expire = new Date(now).setFullYear(
+                      new Date(now).getFullYear() + 10
+                    );
 
-                    report_item_records.push({
-                      PutRequest: {
-                        Item: report_item
-                      }
+                    reportItemsByRequest[request_id].forEach(report_item => {
+                      report_item.processing_status = "PROCESSED";
+                      report_item.modified = now;
+                      report_item.ttl_expire = ttl_expire;
+
+                      report_item_records.push({
+                        PutRequest: {
+                          Item: report_item
+                        }
+                      });
                     });
-                  });
 
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames["ReportItems"],
-                    report_item_records
-                  )
+                    batchWriteWithExponentialBackoff(
+                      new AWS.DynamoDB.DocumentClient(),
+                      tableNames["ReportItems"],
+                      report_item_records
+                    )
                     .then(() => {
                       // This is the one and only success point for these report item records.
                       // Every other codepath is an error of some kind.
@@ -662,18 +665,20 @@ app.all("/processreportitems", function(request, response) {
                     .catch(err => {
                       handleError(err);
                     });
-                })
-                .catch(err => {
-                  handleError(err);
-                });
-            });
-
-            request_promises.push(request_promise);
+                  })
+                  .catch(err => {
+                    handleError(err);
+                  });
+              
+                // TODO: What do I have to do with the broker/client?!!
+                broker.close()
+              })
+              .catch(err => {
+                handleError(err);
+              });
           });
-
-          log.info(
-            `Sent ${reportItemsByRequest[request_id].legth} tweets for request ${request_id}.`
-          );
+          
+          request_promises.push(request_promise);
         });
       } else {
         log.debug("No report items found.");
@@ -681,8 +686,13 @@ app.all("/processreportitems", function(request, response) {
 
       Promise.all(request_promises)
         .then(() => {
+          if (request_promises.length > 0) {
+            log.info(
+              `Sent ${tweet_count} tweets for ${reportitem_count} report items.`
+            );
+          }
+
           // Tweets for all the requests have completed successfully
-          log.info(`Finished sending ${1} tweets for request ${1}.`);
           response.sendStatus(200);
         })
         .catch(err => {
@@ -723,6 +733,8 @@ function processNewTweets(T, docClient, bot_app_id) {
           return false;
         }
 
+        var num_tweets = data.statuses.length;
+        var num_request_records = 0;
         if (data.statuses.length) {
           /* 
           Iterate over each tweet. 
@@ -784,6 +796,7 @@ function processNewTweets(T, docClient, bot_app_id) {
             }
             
             if (request_records.length > 0) {
+              num_request_records += request_records.length;
               twitter_promises.push(
                 batchWriteWithExponentialBackoff(
                   docClient,
@@ -800,6 +813,10 @@ function processNewTweets(T, docClient, bot_app_id) {
 
         Promise.all(twitter_promises)
           .then(() => {
+            if (num_tweets > 0) {
+              log.info(`Wrote ${num_request_records} request records for ${num_tweets} tweets.`)
+            }
+          
             // Update the ids of the last tweet/dm if we processed
             // anything with larger ids.
             if (strUtils._compare_numeric_strings(maxTweetIdRead, last_mention_id) > 0) {
@@ -1232,16 +1249,7 @@ function handleError(error) {
   throw error;
 }
 
-function logTweetById(id) {
-  // Quick check to fetch a specific tweet and dump it fullyt
-  var tweet = getTweetById(id);
-
-  if (tweet) {
-    console.log(`logTweetById (${id}): ${strUtils._printObject(tweet)}`);
-  }
-}
-
-function getTweetById(id) {
+function getTweetById(T, id) {
   // Quick check to fetch a specific tweet.
   var promise = Promise((resolve, reject) => {
     var retTweet;
@@ -1620,3 +1628,4 @@ function SplitLongLines(source_lines, maxLen) {
 
   return truncated_lines;
 }
+

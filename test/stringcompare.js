@@ -1,14 +1,10 @@
-
-
-
 var assert = require('assert'),
     log4js = require('log4js'),
+    server = require('../server'),
     sinon = require('sinon'),
     strUtils = require('../util/stringutils.js');
 
-// Log files
-log4js.configure('./config/log4js.json');
-var log = log4js.getLogger("test");
+var log = server._log;
 
 describe('Numeric string compare', function() {
   describe('Test strings with a < b', function() {
