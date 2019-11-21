@@ -1,13 +1,8 @@
 var assert = require('assert'),
-    log4js = require('log4js'),
     server = require('../server'),
     sinon = require('sinon'),
     strUtils = require('../util/stringutils.js'),
     twitmocks   = require('../test/mocks/twitter.js');
-
-// Log files
-log4js.configure('./config/log4js.json');
-var log = log4js.getLogger("test");
 
 describe('Tweet handling', function() {
   describe('Handle tweet with reference', function() {

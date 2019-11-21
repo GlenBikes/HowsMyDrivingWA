@@ -1,5 +1,5 @@
 {
-    "appenders": {
+    "appenders": {  
       "lastmention": {
         "type": "file",
         "filename": "log/_last_mention_id.txt",
@@ -51,9 +51,9 @@
       }
     },
     "categories": {
-      "default": { "appenders": [ "app", "out" ], "level": "ALL" },
-      "_lastmention": { "appenders": [ "lastmention", "stdout" ], "level": "ALL" },
-      "_lastdm": { "appenders": [ "lastdm", "stdout"    ], "level": "ALL" },
-      "_test": { "appenders": [ "test", "stdout"    ], "level": "ALL" }
+      "default": { "appenders": [ "app", "out" ], "level": "INFO" },
+      "_lastmention": { "appenders": [ "lastmention", "stdout" ], "level": "INFO" },
+      "_lastdm": { "appenders": [ "lastdm", "stdout"    ], "level": "INFO" },
+      "_test": { "appenders": [ "test", "stdout"    ], "level": "INFO" }
     }
 }
