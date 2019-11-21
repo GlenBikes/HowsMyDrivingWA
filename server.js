@@ -21,8 +21,7 @@ const AWS = require("aws-sdk"),
   soap = require("soap"),
   strUtils = require('./util/stringutils.js'),
   Twit = require("twit"),
-  uuidv1 = require("uuid/v1"),
-  watchr = require('watchr');
+  uuidv1 = require("uuid/v1");
 
 var {LMXClient, LMXBroker} = require('live-mutex');
 
