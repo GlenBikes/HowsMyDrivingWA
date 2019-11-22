@@ -1,6 +1,5 @@
 const log4js = require('log4js'),
-      chokidar = require('chokidar'),
-      strUtils = require('./stringutils.js');
+      chokidar = require('chokidar');
 
 // Log files
 log4js.configure('config/log4js.json');
@@ -11,8 +10,6 @@ var log = log4js.getLogger(),
 module.exports._log = log;
 module.exports._lastdmLog = lastdmLog;
 module.exports._lastmentionLog = lastmentionLog;
-
-debugger;
 
 const watcher = chokidar.watch('./config/log4js.json', {
   ignored: /(^|[\/\\])\../, // ignore dotfiles

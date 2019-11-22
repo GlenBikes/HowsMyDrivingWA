@@ -9,11 +9,11 @@ module.exports = {
 
 /* Setting things up. */
 const AWS = require("aws-sdk"),
+  howsmydriving_utils = require("howsmydriving-utils"),
   chokidar = require('chokidar'),
   express = require("express"),
   fs = require("fs"),
   license = require("./opendata/licensehelper"),
-  logging = require("./util/logging.js"),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require("path"),
   Q = require('./util/batch-write-queue.js'),
@@ -23,7 +23,10 @@ const AWS = require("aws-sdk"),
   Twit = require("twit"),
   uuidv1 = require("uuid/v1");
 
+
 var {LMXClient, LMXBroker} = require('live-mutex');
+
+//console.log(`hmdUtils:\n${strUtils._printObject(hmdUtils)}\nEND.`);
 
 var app = express(),
   config = {
@@ -40,14 +43,14 @@ var localStorage = new LocalStorage('./.localstore');
 
 // Mutex to ensure we don't post tweets in quick succession
 const MUTEX_NAME_TWIT_POST = 'twitter_post',
-      MUTEX_TWIT_POST_MAX_HOLD_MS = 10000,
+      MUTEX_TWIT_POST_MAX_HOLD_MS = 100000,
       MUTEX_TWIT_POST_MAX_RETRIES = 5,
-      MUTEX_TWIT_POST_MAX_WAIT_MS = 30000;
+      MUTEX_TWIT_POST_MAX_WAIT_MS = 300000;
 
 process.setMaxListeners(15);
     
 
-const MAX_RECORDS_BATCH = 2000,
+const MAX_RECORDS_BATCH = 2000, 
   INTER_TWEET_DELAY_MS =
     process.env.hasOwnProperty("INTER_TWEET_DELAY_MS") &&
     process.env.INTER_TWEET_DELAY_MS > 0
@@ -61,9 +64,9 @@ const MAX_RECORDS_BATCH = 2000,
 
 module.exports._tableNames = tableNames;
 
-var log = logging._log,
-    lastdmLog = logging._lastdmLog,
-    lastmentionLog = logging._lastmentionLog;
+var log = howsmydriving_utils.getLog(howsmydriving_utils.LogType.app),
+    lastdmLog = howsmydriving_utils.getLog(howsmydriving_utils.LogType.last_dm),  
+    lastmentionLog = howsmydriving_utils.getLog(howsmydriving_utils.LogType.last_mention);
 
 log.info(`${process.env.TWITTER_HANDLE}: start`);
 
@@ -250,8 +253,11 @@ app.all("/processrequests", function(request, response) {
   try {
     var docClient = new AWS.DynamoDB.DocumentClient();
 
+    log.debug(`Checking for request records...`);
     GetRequestRecords()
       .then( (request_records) => {
+        log.info(`Processing ${request_records.length} request records...`);
+        
         var request_promises = [];
       
         if (request_records && request_records.length > 0) {
@@ -470,8 +476,9 @@ app.all("/processcitations", function(request, response) {
       
       if (citations && citations.length > 0) {
         var citationsByRequest = {};
+        var citationsByPlate = {};
 
-        log.debug(`Found ${citations.length} citation records.`);
+        log.info(`Processing ${citations.length} citation records...`);
 
         // Sort them based on request
         citations.forEach(function(citation) {
@@ -483,57 +490,69 @@ app.all("/processcitations", function(request, response) {
         });
         
         var request_promises = [];
+        var requestsforplate_promises = {};
+        
+        // Kick of the DB calls to get query counts for each of these requests
+        citations.forEach( (citation) => {
+          citationsByPlate[citation.license] = 1;
+        })
+        
+        Object.keys(citationsByPlate).forEach( (license) => {
+          requestsforplate_promises[license] = GetQueryCount(license);
+        })
 
         // Now process the citations, on a per-request basis
-        Object.keys(citationsByRequest).forEach(function(request_id) {
+        Object.keys(citationsByRequest).forEach( (request_id) => {
           var request_promise = new Promise( (resolve, reject) => {  
             // Get the first citation to access citation columns
             var citation = citationsByRequest[request_id][0];
-            seattle
-              .ProcessCitationsForRequest(citationsByRequest[request_id])
-              .then( (report_items) => {
-                // Write report items
-                WriteReportItemRecords(docClient, request_id, citation, report_items)
-                  .then( (results) => {
-                    log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
-                    // Set the processing status of all the citations
-                    var citation_records = [];
-                    var now = Date.now();
-                    // Now that the record is PROCESSED, TTL is 1 month 
-                    var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+            requestsforplate_promises[citation.license].then( (query_count ) => {
+              seattle
+                .ProcessCitationsForRequest(citationsByRequest[request_id], query_count)
+                .then( (report_items) => {
+                  // Write report items
+                  WriteReportItemRecords(docClient, request_id, citation, report_items)
+                    .then( (results) => {
+                      log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
+                      // Set the processing status of all the citations
+                      var citation_records = [];
+                      var now = Date.now();
+                      // Now that the record is PROCESSED, TTL is 1 month 
+                      var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
-                    citationsByRequest[request_id].forEach(citation => {
-                      citation.processing_status = "PROCESSED";
-                      citation.modified = now;
-                      citation.ttl_expire = ttl_expire;
+                      citationsByRequest[request_id].forEach(citation => {
+                        citation.processing_status = "PROCESSED";
+                        citation.modified = now;
+                        citation.ttl_expire = ttl_expire;
 
-                      citation_records.push({
-                        PutRequest: {
-                          Item: citation
-                        }
+                        citation_records.push({
+                          PutRequest: {
+                            Item: citation
+                          }
+                        });
                       });
-                    });
 
-                    batchWriteWithExponentialBackoff(
-                      new AWS.DynamoDB.DocumentClient(),
-                      tableNames["Citations"], 
-                      citation_records
-                    ).then( () => {
-                      log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
-                      // This is the one success point for this request.
-                      // All other codepaths indicate a failure.
-                      resolve();
-                    }).catch ( (err) => {
-                      handleError(err);
-                    });
+                      batchWriteWithExponentialBackoff(
+                        new AWS.DynamoDB.DocumentClient(),
+                        tableNames["Citations"], 
+                        citation_records
+                      ).then( () => {
+                        log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
+                        // This is the one success point for this request.
+                        // All other codepaths indicate a failure.
+                        resolve();
+                      }).catch ( (err) => {
+                        handleError(err);
+                      });
 
-                  })
-                  .catch(function(e) {
-                    handleError(e);
-                  });
-              })
-              .catch(e => {
-                handleError(e);
+                    })
+                    .catch(function(e) {
+                      handleError(e);
+                    });
+                })
+                .catch(e => {
+                  handleError(e);
+                });
               });
           });
 
@@ -571,6 +590,7 @@ app.all("/processreportitems", function(request, response) {
       var tweet_count = 0;
 
       if (report_items && report_items.length > 0) {
+        log.info(`Processing ${report_items.length} report items...`)
         var reportItemsByRequest = {};
 
         // Sort them based on request
@@ -607,90 +627,103 @@ app.all("/processreportitems", function(request, response) {
             };
 
             log.debug(`Creating mutex for SendResponses...`);
-            Promise.all([new LMXBroker().ensure(), new LMXClient().connect()])
-              .then( ([broker, client]) => {
-                log.debug(`Created mutex for SendResponses.`);
+            var mutex_client,
+                mutex_broker;
+            
+            Promise.all([new LMXBroker().ensure(), new LMXClient().connect()]).then( ([broker, client]) => {
+              mutex_client = client;
+              mutex_broker = broker;
+              log.info(`Successfully created mutex client/broker.`);
+            }).catch( (err) => {
+              log.info(`Failed to create mutex client/broker. Proceeding without them. Err: ${err}.`);
+            }).finally( () => {
+              log.debug(`Created mutex for SendResponses.`);
 
-                broker.emitter.on("warning", function() {
+              if (mutex_broker && mutex_client) {
+                mutex_broker.emitter.on("warning", function() {
                   log.debug(...arguments);
                 });
 
-                client.emitter.on("warning", function() {
+                mutex_client.emitter.on("warning", function() {
                   log.debug(...arguments);
                 });
+              }
 
-                // Send a copy of the report items to SendResponse since we need to
-                SendResponses(
-                  client,
-                  T,
-                  origTweet,
-                  reportItemsByRequest[request_id]
-                )
+              log.info(`Posting tweets for ${reportItemsByRequest[request_id][0].license}, request ${request_id}.`);
+              // Send a copy of the report items to SendResponse since we need to
+              SendResponses(
+                mutex_client,
+                T,
+                origTweet,
+                reportItemsByRequest[request_id]
+              )
+                .then( () => {
+                  log.info(
+                    `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
+                  );
+
+                  tweet_count =
+                    tweet_count + reportItemsByRequest[request_id].length;
+                  log.info(`Interim tweet_count: ${tweet_count}.`);
+
+                  log.debug(`Closing mutex for SendResponses.`);
+                  if (mutex_client) {
+                    mutex_client.close();
+                  }
+
+                  // Set the processing status of all the report_items
+                  var report_item_records = [];
+                  var now = Date.now();
+                  // Now that the record is PROCESSED, TTL is 1 month
+                  var ttl_expire = new Date(now).setFullYear(
+                    new Date(now).getFullYear() + 10
+                  );
+
+                  reportItemsByRequest[request_id].forEach(report_item => {
+                    report_item.processing_status = "PROCESSED";
+                    report_item.modified = now;
+                    report_item.ttl_expire = ttl_expire;
+
+                    report_item_records.push({
+                      PutRequest: {
+                        Item: report_item
+                      }
+                    });
+                  });
+
+                  batchWriteWithExponentialBackoff(
+                    new AWS.DynamoDB.DocumentClient(),
+                    tableNames["ReportItems"],
+                    report_item_records
+                  )
                   .then( () => {
-                    log.info(
-                      `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
-                    );
-
-                    tweet_count =
-                      tweet_count + reportItemsByRequest[request_id].length;
-                    log.info(`Interim tweet_count: ${tweet_count}.`);
-
-                    log.debug(`Closing mutex for SendResponses.`);
-                    client.close();
-
-                    // Set the processing status of all the report_items
-                    var report_item_records = [];
-                    var now = Date.now();
-                    // Now that the record is PROCESSED, TTL is 1 month
-                    var ttl_expire = new Date(now).setFullYear(
-                      new Date(now).getFullYear() + 10
-                    );
-
-                    reportItemsByRequest[request_id].forEach(report_item => {
-                      report_item.processing_status = "PROCESSED";
-                      report_item.modified = now;
-                      report_item.ttl_expire = ttl_expire;
-
-                      report_item_records.push({
-                        PutRequest: {
-                          Item: report_item
-                        }
-                      });
-                    });
-
-                    batchWriteWithExponentialBackoff(
-                      new AWS.DynamoDB.DocumentClient(),
-                      tableNames["ReportItems"],
-                      report_item_records
-                    )
-                    .then( () => {
-                      // This is the one and only success point for these report item records.
-                      // Every other codepath is an error of some kind.
-                      resolve();
-                    })
-                    .catch(err => {
-                      handleError(err);
-                    });
+                    // This is the one and only success point for these report item records.
+                    // Every other codepath is an error of some kind.
+                    resolve();
                   })
                   .catch(err => {
                     handleError(err);
                   });
-              
-                // TODO: What do I have to do with the broker/client?!!
-                broker.close()
-              })
-              .catch(err => {
-                handleError(err);
-              });
+                })
+                .catch(err => {
+                  handleError(err);
+                });
+
+              // TODO: What do I have to do with the broker/client?!!
+              if (mutex_broker) {
+                mutex_broker.close();
+              }
+            })
           });
           
           request_promises.push(request_promise);
         });
       } else {
-        log.debug("No report items found.");
+        log.info("No report items found.");
       }
 
-      Promise.all(request_promises)
+    log.debug(`Waiting for ${request_promises.length} request_promises.`);  
+    Promise.all(request_promises)
         .then( () => {
           if (request_promises.length > 0) {
             log.info(
@@ -814,7 +847,7 @@ function processNewTweets(T, docClient, bot_app_id) {
           });
         } else {
           /* No new mentions since the last time we checked. */
-          log.debug("No new mentions...");
+          log.info("No new mentions...");
         }
 
         Promise.all(twitter_promises)
@@ -1085,85 +1118,108 @@ function SendResponses(mutex_client, T, origTweet, report_items) {
     // render i the thread of resposes.
     // So wait at least INTER_TWEET_DELAY_MS ms between posts.
     log.debug(`Acquiring mutex ${MUTEX_NAME_TWIT_POST}...`);
-    debugger;
+    var mutex_promise;
     
+    if (mutex_client) {
+      mutex_promise = mutex_client.acquire(MUTEX_NAME_TWIT_POST, {
+        ttl: MUTEX_TWIT_POST_MAX_HOLD_MS, 
+        retries: MUTEX_TWIT_POST_MAX_RETRIES, 
+        lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
+      });
+    }
+    else {
+      mutex_promise = Promise.resolve( { id: "id", key: "key"} );
+    }
     
-    mutex_client.acquire(MUTEX_NAME_TWIT_POST, {
-      ttl: MUTEX_TWIT_POST_MAX_HOLD_MS, 
-      retries: MUTEX_TWIT_POST_MAX_RETRIES, 
-      lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-    }).then( ({id, key}) => {
-          log.debug(`Acquired mutex ${MUTEX_NAME_TWIT_POST}.`);
-          T.post(
-            "statuses/update",
-            {
-              status: tweetText,
-              in_reply_to_status_id: replyToTweetId,
-              auto_populate_reply_metadata: true
-            },
-            function(err, data, response) {
-              if (err && err.code != 187) {
-                log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
-                log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
-                handleError(err);
-              } else {
-                if (err && err.code == 187) {
-                  // This appears to be a "status is a duplicate" error which
-                  // means we are trying to resend a tweet we already sent.
-                  // Pretend we succeeded.
-                  log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
+    mutex_promise.then( ({id, key}) => {
+      log.debug(`Acquired mutex ${MUTEX_NAME_TWIT_POST}.`);
+      T.post(
+        "statuses/update",
+        {
+          status: tweetText,
+          in_reply_to_status_id: replyToTweetId,
+          auto_populate_reply_metadata: true
+        },
+        function(err, data, response) {
+          if (err && err.code != 187) {
+            log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
+            log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
+            handleError(err);
+          } else {
+            if (err && err.code == 187) {
+              // This appears to be a "status is a duplicate" error which
+              // means we are trying to resend a tweet we already sent.
+              // Pretend we succeeded.
+              log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
 
-                  // Keep replying to the tweet we were told to reply to.
-                  // This means that in this scenario, if any of the rest of the tweets in this
-                  // thread have not been sent, they will create a new thread off the parent of
-                  // this one.
-                  // Not ideal, but the other alternatives are:
-                  // 1) Query for the previous duplicate tweet and then pass that along
-                  // 2) set all of the replies for this request to be PROCESSED even if they did not 
-                  //    all get tweeted.
-                  data = origTweet;
-                }
-                else {
-                  log.debug(`Sent tweet: ${printTweet(data)}.`);
-                }
+              // Keep replying to the tweet we were told to reply to.
+              // This means that in this scenario, if any of the rest of the tweets in this
+              // thread have not been sent, they will create a new thread off the parent of
+              // this one.
+              // Not ideal, but the other alternatives are:
+              // 1) Query for the previous duplicate tweet and then pass that along
+              // 2) set all of the replies for this request to be PROCESSED even if they did not 
+              //    all get tweeted.
+              data = origTweet;
+            }
+            else {
+              log.info("Sent tweet...");
+              log.debug(`Sent tweet: ${printTweet(data)}.`);
+            }
 
-                // Wait a bit. It seems tweeting a whackload of tweets in quick succession
-                // can cause Twitter to think you're a troll bot or something and then some
-                // of the tweets will not display for users other than the bot account.
-                // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-                sleep(INTER_TWEET_DELAY_MS).then( () => {
-                  // Don't release the mutex until after we sleep.
-                  log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
-                  mutex_client.release(key, id).then( (v) => {
-                    log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
-                  
-                    // Send the rest of the responses. When those are sent, then resolve
-                    // the local Promise.
-                    SendResponses(mutex_client, T, data, report_items_clone)
-                      .then(tweet => {
-                        resolve(data);
-                      })
-                      .catch(err => {
-                        handleError(err);
-                      });
-                  }).catch( (err) => {
-                    log.debug(`Error closing mutex ${MUTEX_NAME_TWIT_POST}.`);
-                    handleError(err);
-                  });
-                    
+            // Wait a bit. It seems tweeting a whackload of tweets in quick succession
+            // can cause Twitter to think you're a troll bot or something and then some
+            // of the tweets will not display for users other than the bot account.
+            // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
+            sleep(report_items_clone.length > 0 ? INTER_TWEET_DELAY_MS : 0).then( () => {
+              // Don't release the mutex until after we sleep.
+              log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
+
+              if (mutex_client) {
+                mutex_client.release(key, id).then( (v) => {
+                  log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
+
+                  // Send the rest of the responses. When those are sent, then resolve
+                  // the local Promise.
+                  SendResponses(mutex_client, T, data, report_items_clone)
+                    .then(tweet => {
+                      resolve(data);
+                    })
+                    .catch(err => {
+                      handleError(err);
+                    });
                 }).catch( (err) => {
+                  log.debug(`Error closing mutex ${MUTEX_NAME_TWIT_POST}.`);
                   handleError(err);
                 });
               }
-            }
-          );
-        }).catch( (err) => {
-          handleError(err);
-        });
-      })
-      .catch(e => {
-        handleError(e);
-      });
+              else {
+                log.info(`No mutex, skipping release.`);
+
+                // Send the rest of the responses. When those are sent, then resolve
+                // the local Promise.
+                SendResponses(mutex_client, T, data, report_items_clone)
+                  .then(tweet => {
+                    resolve(data);
+                  })
+                  .catch(err => {
+                    handleError(err);
+                  });
+              }
+
+            }).catch( (err) => {
+              handleError(err);
+            });
+          }
+        }
+      );
+    }).catch( (err) => {
+      handleError(err);
+    });
+  })
+  .catch(e => {
+    handleError(e);
+  });
 }
 
 function getLastDmId() {
@@ -1526,7 +1582,7 @@ function WriteReportItemRecords(docClient, request_id, citation, report_items) {
           modified: now,
           ttl_expire: ttl_expire,
           processing_status: "UNPROCESSED",
-          license: citation.lencense,
+          license: citation.license,
           tweet_id: citation.tweet_id,
           tweet_id_str: citation.tweet_id_str,
           tweet_user_id: citation.tweet_user_id,

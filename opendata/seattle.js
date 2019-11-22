@@ -1,14 +1,8 @@
-const MINIMUM_CITATION_ID = 0,
-  noPlateFoundCitationNumber = -1,
-  noCitationsFoundCitationNumber = -2;
-
 // Exported functions that unit tests need.
 module.exports = {
   GetCitationsByPlate: GetCitationsByPlate,
   ProcessCitationsForRequest: ProcessCitationsForRequest,
   // TODO: Move these to a library that jurisdictions can require.
-  CitationIDNoPlateFound: noPlateFoundCitationNumber,
-  CitationIDNoCitationsFound: noCitationsFoundCitationNumber
 };
 
 // modules
@@ -17,13 +11,11 @@ var chokidar = require('chokidar'),
     fs = require("fs"),
     licenseHelper = require("./licensehelper"),
     log4js = require('log4js'),
-    logging = require('../util/logging.js'),
+    howsmydriving_utils = require('howsmydriving-utils'),
     path = require("path"),
-    server = require('../server'),
-    soap = require("soap"),
-    strUtils = require("../util/stringutils.js");
+    soap = require("soap");
 
-var log = logging._log;
+var log = howsmydriving_utils.getLog('app');
 
 var app = express();
 
@@ -142,7 +134,7 @@ function GetCasesByVehicleNum(vehicleID) {
 }
 
 // Process citations for one request
-function ProcessCitationsForRequest( citations ) {
+function ProcessCitationsForRequest( citations, query_count ) {
   var general_summary, detailed_list, temporal_summary;
   var categorizedCitations = {};
   var chronologicalCitations = {};
@@ -152,23 +144,21 @@ function ProcessCitationsForRequest( citations ) {
   if (!citations || Object.keys(citations).length == 0) {
     // Should never happen. jurisdictions must return at least a dummy citation
     throw new Error("Jurisdiction modules must return at least one citation, a dummy one if there are none.");
-  } else if (citations.length == 1 && citations[0].Citation < MINIMUM_CITATION_ID) {
+  } else if (citations.length == 1 && citations[0].Citation < howsmydriving_utils.MINIMUM_CITATION_ID) {
     switch ( citations[0].Citation ) {
-      case noPlateFoundCitationNumber:
+      case howsmydriving_utils.CitationIDNoPlateFound:
         return Promise.resolve([
           noValidPlate
         ]);
         break;
         
-      case noCitationsFoundCitationNumber:
+      case howsmydriving_utils.CitationIDNoCitationsFound:
         return new Promise( (resolve, reject) => {
-          server._getQueryCount(citations[0].license).then( (query_count) => {
             resolve( [
               `${noCitationsFoundMessage}${licenseHelper.formatPlate(citations[0].license)}` +
               "\n\n" +
               citationQueryText.replace('__LICENSE__', licenseHelper.formatPlate(citations[0].license)).replace('__COUNT__', query_count)
             ]);
-          });
         });
         break
         
@@ -178,7 +168,6 @@ function ProcessCitationsForRequest( citations ) {
     }
   } else {
     var license;
-    var query_count;
     
     for (var i = 0; i < citations.length; i++) {
       var citation = citations[i];
@@ -223,70 +212,68 @@ function ProcessCitationsForRequest( citations ) {
     }
     
     return new Promise( (resolve, reject) => {
-      server._getQueryCount(license).then( (query_count) => {
-        var general_summary =
-          parkingAndCameraViolationsText +
-          licenseHelper.formatPlate(license) +
-          ": " +
-          Object.keys(citations).length;
+      var general_summary =
+        parkingAndCameraViolationsText +
+        licenseHelper.formatPlate(license) +
+        ": " +
+        Object.keys(citations).length;
 
-        Object.keys(categorizedCitations).forEach( key => {
-          var line = key + ": " + categorizedCitations[key];
+      Object.keys(categorizedCitations).forEach( key => {
+        var line = key + ": " + categorizedCitations[key];
 
-          // Max twitter username is 15 characters, plus the @
-          general_summary += "\n";
-          general_summary += line;
-        });
-
-        general_summary += "\n\n";
-        general_summary += citationQueryText
-          .replace('__LICENSE__', licenseHelper.formatPlate(license))
-          .replace('__COUNT__', query_count);
-
-        var detailed_list = "";
-
-        var sortedChronoCitationKeys = Object.keys(chronologicalCitations).sort(
-          function(a, b) {
-            return new Date(a).getTime() - new Date(b).getTime();
-          }
-        );
-
-        var first = true;
-
-        for (var i = 0; i < sortedChronoCitationKeys.length; i++) {
-          var key = sortedChronoCitationKeys[i];
-
-          chronologicalCitations[key].forEach( citation => {
-            if (first != true) {
-              detailed_list += "\n";
-            }
-            first = false;
-            detailed_list += `${citation.ViolationDate}, ${citation.Type}, ${citation.ViolationLocation}, ${citation.Status}`;
-          });
-        }
-
-        var temporal_summary = violationsByYearText + licenseHelper.formatPlate(license) + ":";
-        Object.keys(violationsByYear).forEach( key => {
-          temporal_summary += "\n";
-          temporal_summary += `${key}: ${violationsByYear[key]}`;
-        });
-
-        var type_summary = violationsByStatusText + licenseHelper.formatPlate(license) + ":";
-        Object.keys(violationsByStatus).forEach( key => {
-          type_summary += "\n";
-          type_summary += `${key}: ${violationsByStatus[key]}`;
-        });
-
-        // Return them in the order they should be rendered.
-        var result = [
-          general_summary,
-          detailed_list,
-          type_summary,
-          temporal_summary
-        ];
-
-        resolve(result);
+        // Max twitter username is 15 characters, plus the @
+        general_summary += "\n";
+        general_summary += line;
       });
+
+      general_summary += "\n\n";
+      general_summary += citationQueryText
+        .replace('__LICENSE__', licenseHelper.formatPlate(license))
+        .replace('__COUNT__', query_count);
+
+      var detailed_list = "";
+
+      var sortedChronoCitationKeys = Object.keys(chronologicalCitations).sort(
+        function(a, b) {
+          return new Date(a).getTime() - new Date(b).getTime();
+        }
+      );
+
+      var first = true;
+
+      for (var i = 0; i < sortedChronoCitationKeys.length; i++) {
+        var key = sortedChronoCitationKeys[i];
+
+        chronologicalCitations[key].forEach( citation => {
+          if (first != true) {
+            detailed_list += "\n";
+          }
+          first = false;
+          detailed_list += `${citation.ViolationDate}, ${citation.Type}, ${citation.ViolationLocation}, ${citation.Status}`;
+        });
+      }
+
+      var temporal_summary = violationsByYearText + licenseHelper.formatPlate(license) + ":";
+      Object.keys(violationsByYear).forEach( key => {
+        temporal_summary += "\n";
+        temporal_summary += `${key}: ${violationsByYear[key]}`;
+      });
+
+      var type_summary = violationsByStatusText + licenseHelper.formatPlate(license) + ":";
+      Object.keys(violationsByStatus).forEach( key => {
+        type_summary += "\n";
+        type_summary += `${key}: ${violationsByStatus[key]}`;
+      });
+
+      // Return them in the order they should be rendered.
+      var result = [
+        general_summary,
+        detailed_list,
+        type_summary,
+        temporal_summary
+      ];
+
+      resolve(result);
     });
   }
 }
