@@ -768,7 +768,7 @@ function processNewTweets(T, docClient, bot_app_id) {
 
             if (!chomped || botScreenNameRegexp.test(chomped_text)) {
               /* Don't reply to retweet or our own tweets. */
-              if (status.hasOwnProperty("retweet_status")) {
+              if (status.hasOwnProperty("retweeted_status")) {
                 log.debug(`Ignoring retweet: ${status.full_text}`);
               } else if (status.user.id == bot_app_id) {
                 log.debug("Ignoring our own tweet: " + status.full_text);
