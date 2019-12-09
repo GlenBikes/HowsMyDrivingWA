@@ -1640,4 +1640,4 @@ function SplitLongLines(source_lines, maxLen) {
 
   return truncated_lines;
 }
-
+ 
