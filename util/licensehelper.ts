@@ -1,9 +1,8 @@
-/* Exported functions. */
-module.exports = {
-  formatPlate: formatPlate
-};
-
-module.exports.StatesAndProvinces = [
+/**
+ * Array of all valid 2 character abbreviations for US states/occupied territories and 
+ * Canadian provinces/territories
+**/
+export let StatesAndProvinces: Array<string> = [
   "AL",
   "AK",
   "AS",
@@ -84,7 +83,7 @@ module.exports.StatesAndProvinces = [
  * Also it protects from someone copying/pasting or retweeting or something and having the bot
  * detect it as another request.
 **/
-  function formatPlate(license) {
-    return license.toUpperCase().replace(':', '_');
-  }
+export function formatPlate(license: string) {
+  return license.toUpperCase().replace(':', '_');
+}
 

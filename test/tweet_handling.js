@@ -1,8 +1,9 @@
 var assert = require('assert'),
-    server = require('../server'),
+    server = require('../dist/server'),
     sinon = require('sinon'),
-    strUtils = require('../util/stringutils.js'),
-    twitmocks   = require('../test/mocks/twitter.js');
+    utils = require('howsmydriving-utils'),
+    strUtils = require('../dist/util/stringutils.js'),
+    twitmocks = require('../test/mocks/twitter.js');
 
 describe('Tweet handling', function() {
   describe('Handle tweet with reference', function() {
@@ -16,12 +17,12 @@ describe('Tweet handling', function() {
       var now = new Date().valueOf();
       var stubNow = sinon.stub(Date, 'now').returns(now);
 
-      const stubUuid = sinon.stub(strUtils, '_getUUID').returns( "4887b7a0-09a1-11ea-a100-f9a53a6b0433" );
+      const stubUuid = sinon.stub(strUtils, 'uuidv1').returns( "4887b7a0-09a1-11ea-a100-f9a53a6b0433" );
 
       
       const batchWriteSpy = sinon.spy((params, callback) => {
-        assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
-        assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
+        assert.equal(Object.keys(params.RequestItems)[0], server.tableNames['Request']);
+        assert.equal(params.RequestItems[server.tableNames['Request']].length, 1);
         callback(null, { UnprocessedItems: [] });
       })
 
@@ -45,14 +46,14 @@ describe('Tweet handling', function() {
         }
       }
 
-      return new Promise( ( resolve, reject) => {
-        server._processNewTweets(T, docClient).then( () => {
+      return new Promise( ( resolve, reject ) => {
+        server.processNewTweets(T, docClient).then( () => {
           var expected_params = {
             RequestItems: {
               HMDWA_Request: [{
                   PutRequest: {
                       Item: {
-                          id: strUtils._getUUID(),
+                          id: strUtils.uuidv1(),
                           license: "TX:78DFSD",
                           created: now,
                           modified: now,
@@ -88,10 +89,10 @@ describe('Tweet handling', function() {
       awsMock.setSDKInstance(AWS);
 
       awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
-        assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
-        assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
+        assert.equal(Object.keys(params.RequestItems)[0], server.tableNames['Request']);
+        assert.equal(params.RequestItems[server.tableNames['Request']].length, 1);
         // Make sure this is the "no license found" tweet.
-        assert.equal(params.RequestItems[server._tableNames['Request']][0].PutRequest.Item.license, ':');
+        assert.equal(params.RequestItems[server.tableNames['Request']][0].PutRequest.Item.license, ':');
         callback(null, { UnprocessedItems: [] });
       });
       
@@ -114,7 +115,7 @@ describe('Tweet handling', function() {
       }
 
       return new Promise( ( resolve, reject ) => {
-        server._processNewTweets(T, docClient).then( () => {
+        server.processNewTweets(T, docClient).then( () => {
           resolve();
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
         }).catch ( ( err ) => {
@@ -134,10 +135,10 @@ describe('Tweet handling', function() {
       awsMock.setSDKInstance(AWS);
 
       awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
-        assert.equal(Object.keys(params.RequestItems)[0], server._tableNames['Request']);
-        assert.equal(params.RequestItems[server._tableNames['Request']].length, 1);
+        assert.equal(Object.keys(params.RequestItems)[0], server.tableNames['Request']);
+        assert.equal(params.RequestItems[server.tableNames['Request']].length, 1);
         // Make sure this is the "no license found" tweet.
-        assert.equal(params.RequestItems[server._tableNames['Request']][0].PutRequest.Item.license, ':');
+        assert.equal(params.RequestItems[server.tableNames['Request']][0].PutRequest.Item.license, ':');
         callback(null, { UnprocessedItems: [] });
       });
 
@@ -160,7 +161,7 @@ describe('Tweet handling', function() {
       }
 
       return new Promise( ( resolve, reject ) => {
-        server._processNewTweets(T, docClient).then( () => {
+        server.processNewTweets(T, docClient).then( () => {
           resolve();
         }).catch( ( err ) => {
           throw err;

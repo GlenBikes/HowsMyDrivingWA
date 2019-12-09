@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "lib": ["es6", "es2018.promise"],
+    "module": "commonjs",
+    "target": "es6",
+    "moduleResolution": "node",
+    "declaration": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "types" : ["node", "jasmine", "@types/twit", "aws-sdk"],
+    "traceResolution": true,
+    "downlevelIteration": true
+  },
+  "include": [
+    "*.ts",
+    "^\\.ts$",
+    "src/**/*",
+    "test/**/*",
+    "util/**/*"
+  ]
+}
