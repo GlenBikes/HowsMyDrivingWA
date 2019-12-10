@@ -2,10 +2,10 @@
   "name": "HowsMyDrivingWA",
   "version": "0.0.1",
   "description": "Tweet a license # at me! I'll look it up for you.",
-  "main": "./dist/server.js",
+  "main": "./dist/src/server.js",
   "scripts": {
     "build": "gulp build",
-    "start": "gulp build && node dist/server.js",
+    "start": "gulp build && node dist/src/server.js",
     "test": "gulp test",
     "release": "standard-version"
   },

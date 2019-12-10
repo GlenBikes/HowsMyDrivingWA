@@ -20,14 +20,14 @@ import {PrintTweet} from 'howsmydriving-utils';
 import {SeattleRegion} from 'howsmydriving-seattle';
 
 // interfaces internal to project
-import {IRequestRecord} from './src/interfaces';
-import {IReportItemRecord} from './src/interfaces';
-import {ICitationRecord} from './src/interfaces';
-import {CitationRecord} from './src/interfaces';
-import {StatesAndProvinces, formatPlate} from './src/interfaces';
-import {GetHowsMyDrivingId, DumpObject} from './src/interfaces';
+import {IRequestRecord} from './interfaces';
+import {IReportItemRecord} from './interfaces';
+import {ICitationRecord} from './interfaces';
+import {CitationRecord} from './interfaces';
+import {StatesAndProvinces, formatPlate} from './interfaces';
+import {GetHowsMyDrivingId, DumpObject} from './interfaces';
 
-import {log, lastdmLog, lastmentionLog} from './src/logging';
+import {log, lastdmLog, lastmentionLog} from './logging';
 
 // legacy commonjs modules
 const express = require("express"),
@@ -124,7 +124,6 @@ mutex_broker.ensure().then( () => {
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all("/tweet", function(request: Request, response: Response) {
   
-  debugger;
   const T: Twit = new Twit(config.twitter);
   var docClient: any = new AWS.DynamoDB.DocumentClient();
   
@@ -356,7 +355,6 @@ app.all("/processrequests", (request: Request, response: Response) => {
                   }
                 });
 
-                debugger;
                 batchWriteWithExponentialBackoff(
                   new AWS.DynamoDB.DocumentClient(),
                   tableNames["Citations"],
@@ -1168,7 +1166,20 @@ function SendResponses(mutex_client: Client, T: Twit, origTweet: Twit.Twitter.St
   var replyToTweetId: string = origTweet.id_str;
 
   /* Now we can respond to each tweet. */
-  var tweetText = "@" + replyToScreenName + " " + report_item.tweet_text;
+  // When doing the initial reply to the user's tweet, we need to include their
+  // twitter account in the text of the tweet (i.e. @replyToScreenName).
+  // But when replying to our own replies, we should not include our own mention
+  // or else those tweets will show up in the timelines of everyone who
+  // follows the bot.
+  var tweetText = "";
+  
+  if (!(replyToScreenName.toUpperCase() === process.env.TWITTER_HANDLE.toUpperCase())) {
+    log.info(`Account ${replyToScreenName} != ${process.env.TWITTER_HANDLE}.`);
+    tweetText += "@" + replyToScreenName + " ";
+  } else {
+    log.info(`Account ${replyToScreenName} === ${process.env.TWITTER_HANDLE}.`)
+  }
+  tweetText += report_item.tweet_text;
   log.debug(`Sending Tweet: ${tweetText}.`);
   return new Promise<number>( (resolve, reject) => {
     let tweets_sent: number = 0;
