@@ -618,7 +618,7 @@ app.all("/processcitations", (request: Request, response: Response) => {
           request_promises.push(request_promise);
         });
       } else {
-        log.debug("No citations found.");
+        log.info("No citations found.");
       }
       
       Promise.all(request_promises).then( () => {
