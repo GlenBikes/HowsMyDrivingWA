@@ -13,7 +13,7 @@ import {IRegion} from 'howsmydriving-utils';
 import {ICitation} from 'howsmydriving-utils';
 import {CompareNumericStrings} from 'howsmydriving-utils';
 import {SplitLongLines} from 'howsmydriving-utils';
-import {TruncateStringEllipsis} from 'howsmydriving-utils';
+import {printTweet} from 'howsmydriving-utils';
 
 // howsmydriving-seattle
 // TODO: Put the configuration of regions in .env
@@ -292,6 +292,8 @@ app.all("/processrequests", (request: Request, response: Response) => {
     
     GetRequestRecords()
       .then( (request_records: Array<IRequestRecord>) => {
+        log.info(`Processing ${request_records.length} request records...`);
+
         // DynamoDB does not allow any property to be null or empty string.
         // Set these values to 'None' or a default number.
         const column_overrides: { [ key: string ]: any } = {
@@ -311,8 +313,6 @@ app.all("/processrequests", (request: Request, response: Response) => {
         var request_promises: Array<Promise<void>> = [];
       
         if (request_records && request_records.length > 0) {
-          log.info(`Processing ${request_records.length} request records...`);
-
           request_records.forEach( (item) => {
             let citation_records: Array<object> = [];
             let tokens: Array<string> = item.license.split(":");
@@ -506,7 +506,7 @@ app.all("/processrequests", (request: Request, response: Response) => {
             request_promises.push(request_promise);
           });
         } else {
-          log.info("No request records found.");
+          log.debug("No request records found.");
         }
       
       Promise.all(request_promises).then( () => {
@@ -618,7 +618,7 @@ app.all("/processcitations", (request: Request, response: Response) => {
           request_promises.push(request_promise);
         });
       } else {
-        log.info("No citations found.");
+        log.debug("No citations found.");
       }
       
       Promise.all(request_promises).then( () => {
@@ -1348,50 +1348,6 @@ function setLastDmId(lastDmId: string) {
 function setLastMentionId(lastMentionId: string) {
   lastmentionLog.info(`Writing last mention id ${lastMentionId}.`);
   localStorage.setItem('lastmention', lastMentionId);
-}
-
-// Print out subset of tweet object properties.
-function printTweet(tweet: Twit.Twitter.Status) {
-  var shortened = "";
-  
-  console.info("In printTweet");
-  
-  if (tweet.text) {
-    log.info("text is not null.");
-    shortened = "text: " + TruncateStringEllipsis(tweet.text, 100);
-    
-    try {
-      var t = tweet.text.trunc(100);
-      log.info(`trunc of tweet.text succeeded: ${t}.`)
-    } catch ( e ) {
-      log.info(`Exception in tweet.text.trunc: ${e}.`)
-    }
-  }
-  
-  if (tweet.full_text) {
-    log.info("full_text is not null.");
-    shortened = "full_text: " + TruncateStringEllipsis(tweet.full_text, 100);
-
-    try {
-      var t = tweet.full_text.trunc(100);
-      log.info(`trunc of tweet.full_text succeeded: ${t}.`)
-    } catch ( e ) {
-      log.info(`Exception in tweet.full_text.trunc: ${e}.`)
-    }
-  }
-
-  return (
-    "Tweet: id_str: " +
-    tweet.id_str +
-    ", user: " +
-    tweet.user.screen_name +
-    ", in_reply_to_screen_name: " +
-    tweet.in_reply_to_screen_name +
-    ", in_reply_to_status_id_str: " +
-    tweet.in_reply_to_status_id_str +
-    ", " +
-    shortened
-  );
 }
 
 function handleError(error: Error): void {
