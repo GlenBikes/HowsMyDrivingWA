@@ -1,51 +1,32 @@
+// Exported functions for tests
+module.exports = {
+  _chompTweet: chompTweet,
+  _splitLines: SplitLongLines,
+  _getQueryCount: GetQueryCount,
+  _processNewTweets: processNewTweets,
+  _processNewDMs: processNewDMs
+};
+
 /* Setting things up. */
-import * as AWS from 'aws-sdk';
-import {DocumentClient, QueryOutput} from 'aws-sdk/clients/dynamodb';
-import {Request, Response} from 'express';
-import * as http from 'http';
-import {LMXClient, LMXBroker, Client, Broker} from 'live-mutex';
-import * as Twit from 'twit';
-
-// howsmydriving-utils
-import {Citation} from 'howsmydriving-utils';
-import {CitationIds} from 'howsmydriving-utils';
-import {IRegion} from 'howsmydriving-utils';
-import {ICitation} from 'howsmydriving-utils';
-import {CompareNumericStrings} from 'howsmydriving-utils';
-import {SplitLongLines} from 'howsmydriving-utils';
-import {TruncateStringEllipsis} from 'howsmydriving-utils';
-
-// howsmydriving-seattle
-// TODO: Put the configuration of regions in .env
-import {SeattleRegion} from 'howsmydriving-seattle';
-
-// interfaces internal to project
-import {IRequestRecord} from './src/interfaces';
-import {IReportItemRecord} from './src/interfaces';
-import {ICitationRecord} from './src/interfaces';
-import {CitationRecord} from './src/interfaces';
-import {StatesAndProvinces, formatPlate} from './src/interfaces';
-import {GetHowsMyDrivingId, DumpObject} from './src/interfaces';
-
-import {log, lastdmLog, lastmentionLog} from './src/logging';
-
-// legacy commonjs modules
-const express = require("express"),
+const AWS = require("aws-sdk"),
+  chokidar = require('chokidar'),
+  express = require("express"),
   fs = require("fs"),
+  license = require("./opendata/licensehelper"),
+  logging = require("./util/logging.js"),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require("path"),
-  Q = require('dynamo-batchwrite-queue'),
-  soap = require("soap");
+  Q = require('./util/batch-write-queue.js'),
+  seattle = require("./opendata/seattle"),
+  soap = require("soap"),
+  strUtils = require('./util/stringutils.js'),
+  Twit = require("twit"),
+  uuidv1 = require("uuid/v1");
 
-const noCitationsFoundMessage = "No citations found for plate #",
-  noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",
-  citationQueryText = "License #__LICENSE__ has been queried __COUNT__ times.";
+var {LMXClient, LMXBroker} = require('live-mutex');
 
-// TODO: Put the regions in .env file
-let seattle: SeattleRegion = new SeattleRegion();
-
-const app = express(),
-  config: any = {
+var app = express(),
+  config = {
     twitter: {
       consumer_key: process.env.CONSUMER_KEY,
       consumer_secret: process.env.CONSUMER_SECRET,
@@ -58,43 +39,47 @@ const app = express(),
 var localStorage = new LocalStorage('./.localstore');
 
 // Mutex to ensure we don't post tweets in quick succession
-const MUTEX_TWIT_POST_MAX_HOLD_MS: number = 100000,
-      MUTEX_TWIT_POST_MAX_RETRIES: number = 5,
-      MUTEX_TWIT_POST_MAX_WAIT_MS: number = 300000;
+const MUTEX_NAME_TWIT_POST = 'twitter_post',
+      MUTEX_TWIT_POST_MAX_HOLD_MS = 10000,
+      MUTEX_TWIT_POST_MAX_RETRIES = 5,
+      MUTEX_TWIT_POST_MAX_WAIT_MS = 30000;
 
-// Don't think we need to override this. The only EventEmitters we
-// use are for mocha test execution, fs file watching.
 process.setMaxListeners(15);
     
 
-const
-  MAX_RECORDS_BATCH = 2000, 
+const MAX_RECORDS_BATCH = 2000,
   INTER_TWEET_DELAY_MS =
     process.env.hasOwnProperty("INTER_TWEET_DELAY_MS") &&
-    CompareNumericStrings(process.env.INTER_TWEET_DELAY_MS, "0") < 0
-      ? parseInt(process.env.INTER_TWEET_DELAY_MS, 10)
-      : 5000;
-
-export const tableNames: { [tabletype: string] : string; } = {
+    process.env.INTER_TWEET_DELAY_MS > 0
+      ? process.env.INTER_TWEET_DELAY_MS
+      : 5000,
+  tableNames = {
     Request: `${process.env.DB_PREFIX}_Request`,
     Citations: `${process.env.DB_PREFIX}_Citations`,
     ReportItems: `${process.env.DB_PREFIX}_ReportItems`
   };
 
+module.exports._tableNames = tableNames;
+
+var log = logging._log,
+    lastdmLog = logging._lastdmLog,
+    lastmentionLog = logging._lastmentionLog;
+
 log.info(`${process.env.TWITTER_HANDLE}: start`);
 
 AWS.config.update({ region: "us-east-2" });
 
-const maxTweetLength: number = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
-const noCitations: string = "No citations found for plate # ";
-const parkingAndCameraViolationsText: string =
+var maxTweetLength = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
+var tweets = [];
+var noCitations = "No citations found for plate # ";
+var parkingAndCameraViolationsText =
   "Total parking and camera violations for #";
-const violationsByYearText: string = "Violations by year for #";
-const violationsByStatusText: string = "Violations by status for #";
-const licenseQueriedCountText: string =
+var violationsByYearText = "Violations by year for #";
+var violationsByStatusText = "Violations by status for #";
+var licenseQueriedCountText =
   "License __LICENSE__ has been queried __COUNT__ times.";
-const licenseRegExp: RegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
-const botScreenNameRegexp: RegExp = new RegExp(
+var licenseRegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
+var botScreenNameRegexp = new RegExp(
   "@" + process.env.TWITTER_HANDLE + "\\b",
   "i"
 );
@@ -105,34 +90,17 @@ var listener = app.listen(process.env.PORT, function() {
   log.info(`Your bot is running on port ${listener.address().port}`);
 });
 
-// One global broker for the live-mutex clients.
-let mutex_broker = new Broker( {} );
-
-mutex_broker.emitter.on('warning', function () {
-  log.warn(...arguments);
-});
-
-mutex_broker.emitter.on('error', function () {
-  log.error(...arguments);
-});
-
-mutex_broker.ensure().then( () => {
-  log.info(`Successfully created mutex broker.`);
-});
-
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
 /* uptimerobot.com is hitting this URL every 5 minutes. */
-app.all("/tweet", function(request: Request, response: Response) {
-  
-  debugger;
-  const T: Twit = new Twit(config.twitter);
-  var docClient: any = new AWS.DynamoDB.DocumentClient();
+app.all("/tweet", function(request, response) {
+  const T = new Twit(config.twitter);
+  var docClient = new AWS.DynamoDB.DocumentClient();
   
   // We need the bot's app id to detect tweets from the bot
-  getAccountID(T).then( ( app_id: number ) => {
+  getAccountID(T).then( ( app_id ) => {
     try {
-      var twitter_promises: Array<Promise<void>> = [];
-      let tweet_process_promise: Promise<void> = processNewTweets(T, docClient, app_id);
+      var twitter_promises = [];
+      var tweet_process_promise = processNewTweets(T, docClient, app_id);
       var dm_process_promise = processNewDMs();
 
       twitter_promises.push(tweet_process_promise);
@@ -147,12 +115,12 @@ app.all("/tweet", function(request: Request, response: Response) {
     } catch ( err ) {
       response.status(500).send(err);
     }
-  }).catch( (err: Error) => {
+  }).catch( (err) => {
     handleError(err);
   });
 });
 
-app.all("/test", function(request: Request, response: Response) {
+app.all("/test", function(request, response) {
   // Doing the require here will cause the tests to rerun every
   // time the /test url is loaded even if no test or product
   // code has changed.
@@ -165,11 +133,11 @@ app.all("/test", function(request: Request, response: Response) {
 
   // Add each .js file to the mocha instance
   fs.readdirSync(testDir)
-    .filter( (file: string) => {
+    .filter(function(file) {
       // Only keep the .js files
       return file.substr(-3) === ".js";
     })
-    .forEach( (file: string) => {
+    .forEach(function(file) {
       mocha.addFile(path.join(testDir, file));
     });
 
@@ -179,20 +147,20 @@ app.all("/test", function(request: Request, response: Response) {
   // Run the tests.
   mocha
     .run()
-    .on("test", (test: any) => {
+    .on("test", function(test) {
       test_results += `Test started: ${test.title}\n`;
     })
-    .on("test end", (test: any) => {
+    .on("test end", function(test) {
       //test_results += `Test done: ${test.title}\n`;
     })
-    .on("pass", (test: any) => {
+    .on("pass", function(test) {
       test_results += `Test passed: ${test.title}\n\n`;
     })
-    .on("fail", (test: any, err: Error) => {
+    .on("fail", function(test, err) {
       test_results += `Test failed: ${test.title}\nError:\n${err}\n\n`;
       failures = true;
     })
-    .on("end", () => {
+    .on("end", function() {
       test_results +=
         "*********************************************\n\nTests all finished!\n\n********************************************";
       // send your email here
@@ -204,22 +172,17 @@ app.all("/test", function(request: Request, response: Response) {
     });
 });
 
-app.all("/dumpfile", (request: Request, response: Response) => {
-  try {
-    log.info("dumpfile");
-    var fileName = path.resolve(`${__dirname}/../log/err.log`);
+app.all("/dumpfile", function(request, response) {
+  var fileName = `${__dirname}/log/err.log`;
 
-    if (request.query.hasOwnProperty("filename")) {
-      fileName = path.resolve(`${__dirname}/../${request.query.filename}`);
-    }
-    log.info(`Sending file: ${fileName}.`);
-    response.sendFile(fileName);
-  } catch( err ) {
-    response.status(500).send(err);
+  if (request.query.hasOwnProperty("filename")) {
+    fileName = `${__dirname}/${request.query.filename}`;
   }
+  log.info(`Sending file: ${fileName}.`);
+  response.sendFile(fileName);
 });
 
-app.all("/dumptweet", (request: Request, response: Response) => {
+app.all("/dumptweet", function(request, response) {
   try {
     if (request.query.hasOwnProperty("id")) {
       const T = new Twit(config.twitter);
@@ -234,10 +197,10 @@ app.all("/dumptweet", (request: Request, response: Response) => {
   }
 });
 
-app.all("/dumpcitations", (request: Request, response: Response) => {
+app.all("/dumpcitations", function(request, response) {
   try {
-  let state: string;
-  let plate: string;
+  var state;
+  var plate;
   if (
     request.query.hasOwnProperty("state") &&
     request.query.hasOwnProperty("plate")
@@ -251,7 +214,7 @@ app.all("/dumpcitations", (request: Request, response: Response) => {
 
   seattle
     .GetCitationsByPlate(plate, state)
-    .then( (citations: Array<ICitation>) => {
+    .then( (citations) => {
       var body = "Citations found:\n";
 
       if (!citations || citations.length == 0) {
@@ -261,7 +224,7 @@ app.all("/dumpcitations", (request: Request, response: Response) => {
         response.json(citations);
       }
     })
-    .catch( (err) => {
+    .catch(function(err) {
       handleError(err);
     });
   }
@@ -270,10 +233,9 @@ app.all("/dumpcitations", (request: Request, response: Response) => {
   }
 });
 
-app.all(["/errors", "/error", "/err"], (request: Request, response: Response) => {
+app.all("/errors", function(request, response) {
   try {
-    log.info("errors");
-    var fileName = path.resolve(`${__dirname}/../log/err.log`);
+    var fileName = `${__dirname}/log/err.log`;
 
     log.info(`Sending file: ${fileName}.`);
     response.sendFile(fileName);
@@ -284,47 +246,28 @@ app.all(["/errors", "/error", "/err"], (request: Request, response: Response) =>
 });
 
 // uptimerobot.com hits this every 5 minutes
-app.all("/processrequests", (request: Request, response: Response) => {
+app.all("/processrequests", function(request, response) {
   try {
     var docClient = new AWS.DynamoDB.DocumentClient();
 
-    log.debug(`Checking for request records...`);
-    
     GetRequestRecords()
-      .then( (request_records: Array<IRequestRecord>) => {
-        log.info(`Processing ${request_records.length} request records...`);
-
-        // DynamoDB does not allow any property to be null or empty string.
-        // Set these values to 'None' or a default number.
-        const column_overrides: { [ key: string ]: any } = {
-          "CaseNumber": -1,
-          "ChargeDocNumber": "None",
-          "Citation": "None",
-          "CollectionsStatus": "None",
-          "FilingDate": "None",
-          "InCollections": "false",
-          "Status": "None",
-          "Type": "None",
-          "ViolationDate": "None",
-          "ViolationLocation": "None"
-        };
-
-      
-        var request_promises: Array<Promise<void>> = [];
+      .then( (request_records) => {
+        var request_promises = [];
       
         if (request_records && request_records.length > 0) {
           request_records.forEach( (item) => {
-            let citation_records: Array<object> = [];
-            let tokens: Array<string> = item.license.split(":");
-            let state: string;
-            let plate: string;
+            var batch_write_promises = [];
+            var citation_records = [];
+            var tokens = item.license.split(":");
+            var state;
+            var plate;
 
             if (tokens.length == 2) {
               state = tokens[0];
               plate = tokens[1];
             }
             
-            var request_promise = new Promise<void>( (resolve, reject) => {
+            var request_promise = new Promise( (resolve, reject) => {
               if (state == null || state == "" || plate == null || plate == "") {
                 log.warn(
                   `Not a valid state/plate in this request (${state}/${plate}).`
@@ -333,10 +276,9 @@ app.all("/processrequests", (request: Request, response: Response) => {
                 var now = Date.now();
                 // TTL is 10 years from now until the records are PROCESSED
                 var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
-                var citation: ICitationRecord = {
-                  id: GetHowsMyDrivingId(),
-                  citation_id: CitationIds.CitationIDNoPlateFound,
-                  Citation: CitationIds.CitationIDNoPlateFound,
+                var citation = {
+                  id: strUtils._getUUID(),
+                  Citation: seattle.CitationIDNoPlateFound,
                   processing_status: "UNPROCESSED",
                   license: item.license,
                   request_id: item.id,
@@ -356,14 +298,11 @@ app.all("/processrequests", (request: Request, response: Response) => {
                   }
                 });
 
-                debugger;
                 batchWriteWithExponentialBackoff(
                   new AWS.DynamoDB.DocumentClient(),
                   tableNames["Citations"],
                   citation_records
                 ).then( () => {
-                      log.info(`Finished writing ${citation_records.length} citation records for ${state}:${plate}.`);          
-
                       var params = {
                         TableName: tableNames["Request"],
                         Key: {
@@ -381,16 +320,14 @@ app.all("/processrequests", (request: Request, response: Response) => {
                         }
                       };
 
-                      docClient.update(params, function(err: Error, data: any) {
+                      docClient.update(params, function(err, data) {
                         if (err) {
                           handleError(err);
                         }
-                        log.info(`Updated request ${item.id} record.`);
-                        
                         resolve();
                       });
                     })
-                    .catch( (e: Error) => {
+                    .catch(function(e) {
                       handleError(e);
                     });
               } else {
@@ -400,9 +337,9 @@ app.all("/processrequests", (request: Request, response: Response) => {
                     // TTL is 10 years from now until the records are PROCESSED
                     var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
-                    var citation: ICitationRecord = {
-                      id: GetHowsMyDrivingId(),
-                      citation_id: CitationIds.CitationIDNoCitationsFound,
+                    var citation = {
+                      id: strUtils._getUUID(),
+                      Citation: seattle.CitationIDNoCitationsFound,
                       request_id: item.id,
                       processing_status: "UNPROCESSED",
                       license: item.license,
@@ -416,7 +353,9 @@ app.all("/processrequests", (request: Request, response: Response) => {
                       tweet_user_screen_name: item.tweet_user_screen_name
                     };
 
-                    mungeObject(citation, column_overrides);
+                    // DynamoDB does not allow any property to be null or empty string.
+                    // Set these values to 'None'.
+                    mungeCitation(citation);
 
                     citation_records.push({
                       PutRequest: {
@@ -428,30 +367,27 @@ app.all("/processrequests", (request: Request, response: Response) => {
                       var now = Date.now();
                       // TTL is 10 years from now until the records are PROCESSED
                       var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
-                      
-                      let citation_record:CitationRecord = new CitationRecord(citation);
-                      
-                      citation_record.id = GetHowsMyDrivingId();
-                      citation_record.citation_id = citation.citation_id;
-                      citation_record.request_id = item.id;
-                      citation_record.processing_status = "UNPROCESSED";
-                      citation_record.license = item.license;
-                      citation_record.created = now;
-                      citation_record.modified = now;
-                      citation_record.ttl_expire = ttl_expire;
-                      citation_record.tweet_id = item.tweet_id;
-                      citation_record.tweet_id_str = item.tweet_id_str;
-                      citation_record.tweet_user_id = item.tweet_user_id;
-                      citation_record.tweet_user_id_str = item.tweet_user_id_str;
-                      citation_record.tweet_user_screen_name = item.tweet_user_screen_name;
 
-                      // DynamoDB does nonnt allow any property to be null or empty string.
+                      citation.id = strUtils._getUUID();
+                      citation.request_id = item.id;
+                      citation.processing_status = "UNPROCESSED";
+                      citation.license = item.license;
+                      citation.created = now;
+                      citation.modified = now;
+                      citation.ttl_expire = ttl_expire;
+                      citation.tweet_id = item.tweet_id;
+                      citation.tweet_id_str = item.tweet_id_str;
+                      citation.tweet_user_id = item.tweet_user_id;
+                      citation.tweet_user_id_str = item.tweet_user_id_str;
+                      citation.tweet_user_screen_name = item.tweet_user_screen_name;
+
+                      // DynamoDB does not allow any property to be null or empty string.
                       // Set these values to 'None'.
-                      mungeObject(citation_record, column_overrides);
+                      mungeCitation(citation);
 
                       citation_records.push({
                         PutRequest: {
-                          Item: citation_record
+                          Item: citation
                         }
                       });
                     });
@@ -483,7 +419,7 @@ app.all("/processrequests", (request: Request, response: Response) => {
                       // What happens if update gets throttled?
                       // I don't see any info on that. Does that mean it doesn't?
                       // It just succeeds or fails?
-                      docClient.update(params, (err: Error, data: any) => {
+                      docClient.update(params, function(err, data) {
                         if (err) {
                           handleError(err);
                         }
@@ -494,10 +430,10 @@ app.all("/processrequests", (request: Request, response: Response) => {
                       // Resolve the Promise we are in.
                       resolve();
                     });
-                  }).catch( (err: Error) => {
+                  }).catch( (err) => {
                     handleError(err);
                   });
-                }).catch( (err: Error) => {
+                }).catch( (err) => {
                   handleError(err);
                 });
               }
@@ -512,33 +448,33 @@ app.all("/processrequests", (request: Request, response: Response) => {
       Promise.all(request_promises).then( () => {
         // This is the only success. Every other codepath represents a failure.
         response.sendStatus(200);
-      }).catch( (err: Error) => {
+      }).catch( (err) => {
         handleError(err);
       })
     })
-    .catch( (err: Error) => {
+    .catch(err => {
       handleError(err);
     });
-  } catch ( err ) {
+  }
+  catch ( err ) {
     response.status(500).send(err);
   }
 });
 
-app.all("/processcitations", (request: Request, response: Response) => {
+app.all("/processcitations", function(request, response) {
   try {
     var docClient = new AWS.DynamoDB.DocumentClient();
 
-    GetCitationRecords().then( (citations: Array<ICitationRecord>) => {
-      let request_promises: Array<Promise<void>> = [];
+    GetCitationRecords().then( (citations) => {
+      var request_promises = [];
       
       if (citations && citations.length > 0) {
-        let citationsByRequest: { [request_id: string] : Array<ICitationRecord> } = {};
-        let citationsByPlate: { [plate: string] : number } = {};
+        var citationsByRequest = {};
 
-        log.info(`Processing ${citations.length} citation records...`);
+        log.debug(`Found ${citations.length} citation records.`);
 
         // Sort them based on request
-        citations.forEach( (citation: ICitationRecord) => {
+        citations.forEach(function(citation) {
           if (!(citation.request_id in citationsByRequest)) {
             citationsByRequest[citation.request_id] = new Array();
           }
@@ -546,72 +482,58 @@ app.all("/processcitations", (request: Request, response: Response) => {
           citationsByRequest[citation.request_id].push(citation);
         });
         
-        let requestsforplate_promises: {[plate: string] : Promise<number>; } = {};
-        
-        // Kick of the DB calls to get query counts for each of these requests
-        citations.forEach( (citation) => {
-          citationsByPlate[citation.license] = 1;
-        })
-        
-        Object.keys(citationsByPlate).forEach( (license) => {
-          requestsforplate_promises[license] = GetQueryCount(license);
-        })
+        var request_promises = [];
 
         // Now process the citations, on a per-request basis
-        Object.keys(citationsByRequest).forEach( (request_id) => {
-          var request_promise: Promise<void> = new Promise<void>( (resolve, reject) => {  
+        Object.keys(citationsByRequest).forEach(function(request_id) {
+          var request_promise = new Promise( (resolve, reject) => {  
             // Get the first citation to access citation columns
-            let citation: ICitationRecord = citationsByRequest[request_id][0];
-            requestsforplate_promises[citation.license].then( (query_count ) => {
-              let report_items: Array<string> = []
-              // Check to see if there was only a dummy citation for this plate
-              if (citationsByRequest[request_id].length == 1 && citationsByRequest[request_id][0].citation_id < CitationIds.MINIMUM_CITATION_ID) {
-               report_items = GetReportItemForPseudoCitation(citationsByRequest[request_id][0], query_count);
-              }                
-              else {
-                report_items = seattle
-                  .ProcessCitationsForRequest(citationsByRequest[request_id], query_count);
-              }
-
+            var citation = citationsByRequest[request_id][0];
+            seattle
+              .ProcessCitationsForRequest(citationsByRequest[request_id])
+              .then( (report_items) => {
                 // Write report items
-              WriteReportItemRecords(docClient, request_id, citation, report_items)
-                .then( () => {
-                  log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
-                  // Set the processing status of all the citations
-                  var citation_records: any = [];
-                  var now = Date.now();
-                  // Now that the record is PROCESSED, TTL is 1 month 
-                  var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+                WriteReportItemRecords(docClient, request_id, citation, report_items)
+                  .then( (results) => {
+                    log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
+                    // Set the processing status of all the citations
+                    var citation_records = [];
+                    var now = Date.now();
+                    // Now that the record is PROCESSED, TTL is 1 month 
+                    var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
-                  citationsByRequest[request_id].forEach(citation => {
-                    citation.processing_status = "PROCESSED";
-                    citation.modified = now;
-                    citation.ttl_expire = ttl_expire;
+                    citationsByRequest[request_id].forEach(citation => {
+                      citation.processing_status = "PROCESSED";
+                      citation.modified = now;
+                      citation.ttl_expire = ttl_expire;
 
-                    citation_records.push({
-                      PutRequest: {
-                        Item: citation
-                      }
+                      citation_records.push({
+                        PutRequest: {
+                          Item: citation
+                        }
+                      });
                     });
-                  });
 
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames["Citations"], 
-                    citation_records
-                  ).then( () => {
-                    log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
-                    // This is the one success point for this request.
-                    // All other codepaths indicate a failure.
-                    resolve();
-                  }).catch ( (err: Error) => {
-                    handleError(err);
-                  });
+                    batchWriteWithExponentialBackoff(
+                      new AWS.DynamoDB.DocumentClient(),
+                      tableNames["Citations"], 
+                      citation_records
+                    ).then( () => {
+                      log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
+                      // This is the one success point for this request.
+                      // All other codepaths indicate a failure.
+                      resolve();
+                    }).catch ( (err) => {
+                      handleError(err);
+                    });
 
-                })
-                .catch( (e: Error) => {
-                  handleError(e);
-                })
+                  })
+                  .catch(function(e) {
+                    handleError(e);
+                  });
+              })
+              .catch(e => {
+                handleError(e);
               });
           });
 
@@ -625,30 +547,31 @@ app.all("/processcitations", (request: Request, response: Response) => {
         // This is the one success point for all citations being processed.
         // Every other codepath is a failure of some kind.
         response.sendStatus(200);
-      })
-    }).catch( (err: Error) => {
+      }).catch( (err) => {
+        handleError(err);
+      });
+    }).catch( (err) => {
       handleError(err);
     });
-  } catch (err ) {
+  } catch (err) {
     response.status(500).send(err);
   }
 });
 
-app.all("/processreportitems", (request: Request, response: Response) => {
+app.all("/processreportitems", function(request, response) {
   var T = new Twit(config.twitter);
   var docClient = new AWS.DynamoDB.DocumentClient();
-  var request_promises: Array<Promise<void>> = [];
+  var request_promises = [];
 
   log.info(`Checking for report items...`);
 
   GetReportItemRecords()
-    .then( (report_items: Array<IReportItemRecord>) => {
+    .then( (report_items) => {
       var reportitem_count = report_items.length;
       var tweet_count = 0;
 
       if (report_items && report_items.length > 0) {
-        log.info(`Processing ${report_items.length} report items...`)
-        var reportItemsByRequest: { [request_id: string] : Array<IReportItemRecord>; } = {};
+        var reportItemsByRequest = {};
 
         // Sort them based on request
         report_items.forEach(report_item => {
@@ -671,133 +594,127 @@ app.all("/processreportitems", (request: Request, response: Response) => {
 
         // Now process the report_items, on a per-request basis
         Object.keys(reportItemsByRequest).forEach(request_id => {
-          var request_promise: Promise<void> = new Promise<void> ( (resolve, reject) => {
+          var request_promise = new Promise((resolve, reject) => {
             // Get the first report_item to access report_item columns
             var report_item = reportItemsByRequest[request_id][0];
             // Build a fake tweet for the request report_item
-            let user: Twit.Twitter.User = {} as Twit.Twitter.User;
-            
-            
-            user.screen_name = report_item.tweet_user_screen_name;
-
-            let origTweet: Twit.Twitter.Status = {
+            var origTweet = {
               id: report_item.tweet_id,
               id_str: report_item.tweet_id_str,
-              user: user
-            } as Twit.Twitter.Status;
+              user: {
+                screen_name: report_item.tweet_user_screen_name
+              }
+            };
 
             log.debug(`Creating mutex for SendResponses...`);
-            var mutex_client: Client = new LMXClient();
-            
-            mutex_client.emitter.on('info', function () {
-              log.debug(...arguments);
-            });
+            Promise.all([new LMXBroker().ensure(), new LMXClient().connect()])
+              .then( ([broker, client]) => {
+                log.debug(`Created mutex for SendResponses.`);
 
-            mutex_client.emitter.on('warning', function () {
-              log.warn(...arguments);
-            });
+                broker.emitter.on("warning", function() {
+                  log.debug(...arguments);
+                });
 
-            mutex_client.emitter.on('error', function () {
-              log.error(...arguments);
-            });
+                client.emitter.on("warning", function() {
+                  log.debug(...arguments);
+                });
 
-            mutex_client.connect().then( (client) => {
-              log.info(`Successfully created mutex client.`);
-            }).catch( (err: Error) => {
-              log.info(`Failed to create mutex client/broker. Proceeding without them. Err: ${err}.`);
-              mutex_client = undefined;
-            }).finally( () => {
-
-              log.info(`Posting tweets for ${reportItemsByRequest[request_id][0].license}, request ${request_id}.`);
-              // Send a copy of the report items to SendResponse since we need to
-              SendResponses(
-                mutex_client,
-                T,
-                origTweet,
-                reportItemsByRequest[request_id]
-              )
-                .then( ( tweets_sent_count ) => {
-                  log.info(
-                    `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
-                  );
-
-                  tweet_count =
-                    tweet_count + tweets_sent_count;
-
-                  log.debug(`Closing mutex for SendResponses.`);
-                  if (mutex_client) {
-                    mutex_client.close();
-                  }
-
-                  // Set the processing status of all the report_items
-                  var report_item_records: Array<object> = [];
-                  var now = Date.now();
-                  // Now that the record is PROCESSED, TTL is 1 month
-                  var ttl_expire = new Date(now).setFullYear(
-                    new Date(now).getFullYear() + 10
-                  );
-
-                  reportItemsByRequest[request_id].forEach(report_item => {
-                    report_item.processing_status = "PROCESSED";
-                    report_item.modified = now;
-                    report_item.ttl_expire = ttl_expire;
-
-                    report_item_records.push({
-                      PutRequest: {
-                        Item: report_item
-                      }
-                    });
-                  });
-
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames["ReportItems"],
-                    report_item_records
-                  )
+                // Send a copy of the report items to SendResponse since we need to
+                SendResponses(
+                  client,
+                  T,
+                  origTweet,
+                  reportItemsByRequest[request_id]
+                )
                   .then( () => {
-                    // This is the one and only success point for these report item records.
-                    // Every other codepath is an error of some kind.
-                    resolve();
+                    log.info(
+                      `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
+                    );
+
+                    tweet_count =
+                      tweet_count + reportItemsByRequest[request_id].length;
+                    log.info(`Interim tweet_count: ${tweet_count}.`);
+
+                    log.debug(`Closing mutex for SendResponses.`);
+                    client.close();
+
+                    // Set the processing status of all the report_items
+                    var report_item_records = [];
+                    var now = Date.now();
+                    // Now that the record is PROCESSED, TTL is 1 month
+                    var ttl_expire = new Date(now).setFullYear(
+                      new Date(now).getFullYear() + 10
+                    );
+
+                    reportItemsByRequest[request_id].forEach(report_item => {
+                      report_item.processing_status = "PROCESSED";
+                      report_item.modified = now;
+                      report_item.ttl_expire = ttl_expire;
+
+                      report_item_records.push({
+                        PutRequest: {
+                          Item: report_item
+                        }
+                      });
+                    });
+
+                    batchWriteWithExponentialBackoff(
+                      new AWS.DynamoDB.DocumentClient(),
+                      tableNames["ReportItems"],
+                      report_item_records
+                    )
+                    .then( () => {
+                      // This is the one and only success point for these report item records.
+                      // Every other codepath is an error of some kind.
+                      resolve();
+                    })
+                    .catch(err => {
+                      handleError(err);
+                    });
                   })
-                  .catch( (err: Error) => {
+                  .catch(err => {
                     handleError(err);
                   });
-                })
-                .catch( (err: Error) => {
-                  handleError(err);
-                });
-            })
+              
+                // TODO: What do I have to do with the broker/client?!!
+                broker.close()
+              })
+              .catch(err => {
+                handleError(err);
+              });
           });
           
           request_promises.push(request_promise);
         });
       } else {
-        log.info("No report items found.");
+        log.debug("No report items found.");
       }
 
-    log.debug(`Waiting for ${request_promises.length} request_promises.`);  
-    Promise.all(request_promises)
-      .then( () => {
-        if (request_promises.length > 0) {
-          log.info(
-            `Sent ${tweet_count} tweets for ${reportitem_count} report items.`
-          );
-        }
+      Promise.all(request_promises)
+        .then( () => {
+          if (request_promises.length > 0) {
+            log.info(
+              `Sent ${tweet_count} tweets for ${reportitem_count} report items.`
+            );
+          }
 
-        // Tweets for all the requests have completed successfully
-        response.sendStatus(200);
-      })
-      .catch( (err: Error) => {
-        handleError(err);
-      });
-  });
+          // Tweets for all the requests have completed successfully
+          response.sendStatus(200);
+        })
+        .catch(err => {
+          handleError(err);
+        });
+    })
+    .catch(function(err) {
+      response.status(500).send(err);
+    });
 });
 
-export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient, bot_app_id: number): Promise<void> {
-  let maxTweetIdRead: string = "-1";
+function processNewTweets(T, docClient, bot_app_id) {
+  var maxTweetIdRead = -1;
   
   // Collect promises from these operations so they can go in parallel
-  var twitter_promises: Array<Promise<void>> = [];
+  var twitter_promises = [];
 
   /* First, let's load the ID of the last tweet we responded to. */
   var last_mention_id = (maxTweetIdRead = getLastMentionId());
@@ -806,7 +723,7 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
   if (!last_mention_id) {
     handleError(new Error("ERROR: No last dm found! Defaulting to zero."));
   }
-  var mentions_promise = new Promise<void>((resolve, reject) => {
+  var mentions_promise = new Promise((resolve, reject) => {
     log.info(`Checking for tweets greater than ${last_mention_id}.`);
     /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
     T.get(
@@ -816,14 +733,14 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
         since_id: last_mention_id,
         tweet_mode: "extended"
       },
-      function(err: Error, data: Twit.Twitter.SearchResults, response: http.IncomingMessage) {
+      function(err, data, response) {
         if (err) {
           handleError(err);
           return false;
         }
 
-        let num_tweets: number = data.statuses.length;
-        let num_request_records: number = 0;
+        var num_tweets = data.statuses.length;
+        var num_request_records = 0;
         if (data.statuses.length) {
           /* 
           Iterate over each tweet. 
@@ -834,12 +751,12 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
           Since each tweet with a mention is processed in parallel, keep track of largest ID
           and write that at the end.
           */
-          data.statuses.forEach( (status: Twit.Twitter.Status) => {
+          data.statuses.forEach(function(status) {
             var request_records = [];
 
             log.debug(`Found ${printTweet(status)}`);
 
-            if (CompareNumericStrings(maxTweetIdRead, status.id_str) < 0) {
+            if (strUtils._compare_numeric_strings(maxTweetIdRead, status.id_str) < 0) {
               maxTweetIdRead = status.id_str;
             }
 
@@ -851,7 +768,7 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
 
             if (!chomped || botScreenNameRegexp.test(chomped_text)) {
               /* Don't reply to retweet or our own tweets. */
-              if (status.hasOwnProperty("retweet_status")) {
+              if (status.hasOwnProperty("retweeted_status")) {
                 log.debug(`Ignoring retweet: ${status.full_text}`);
               } else if (status.user.id == bot_app_id) {
                 log.debug("Ignoring our own tweet: " + status.full_text);
@@ -861,7 +778,7 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
                 var item = {
                   PutRequest: {
                     Item: {
-                      id: GetHowsMyDrivingId(),
+                      id: strUtils._getUUID(),
                       license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
                       created: now,
                       modified: now,
@@ -897,7 +814,7 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
           });
         } else {
           /* No new mentions since the last time we checked. */
-          log.info("No new mentions...");
+          log.debug("No new mentions...");
         }
 
         Promise.all(twitter_promises)
@@ -908,13 +825,13 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
           
             // Update the ids of the last tweet/dm if we processed
             // anything with larger ids.
-            if (CompareNumericStrings(maxTweetIdRead, last_mention_id) > 0) {
+            if (strUtils._compare_numeric_strings(maxTweetIdRead, last_mention_id) > 0) {
               setLastMentionId(maxTweetIdRead);
             }
 
             resolve();
           })
-          .catch( (err: Error) => {
+          .catch(err => {
             handleError(err);
           });
       }
@@ -1001,19 +918,19 @@ function processNewDMs() {
   return dm_promise;
 }
 
-function batchWriteWithExponentialBackoff(docClient: AWS.DynamoDB.DocumentClient, table:string, records: Array<object>): Promise<void> {
+function batchWriteWithExponentialBackoff(docClient, table, records) {
   return new Promise( (resolve, reject) => {
     var qdb = docClient ? Q(docClient) : Q();
-    qdb.drain = function () {
+    qdb.set_drain( function() {
       resolve();
-    };
+    });
     
-    qdb.error = function(err: Error, task: any) {
+    qdb.set_error(function(err, task) {
       reject(err);
-    };
+    });
 
-    var startPos: number = 0;
-    var endPos: number;
+    var startPos = 0;
+    var endPos;
     while (startPos < records.length) {
       endPos = startPos + 25;
       if (endPos > records.length) {
@@ -1033,31 +950,7 @@ function batchWriteWithExponentialBackoff(docClient: AWS.DynamoDB.DocumentClient
   })
 }
 
-function GetReportItemForPseudoCitation(citation: ICitation, query_count: number): Array<string> {
-  if (!citation || citation.citation_id >= CitationIds.MINIMUM_CITATION_ID) {
-    throw new Error(`ERROR: Unexpected citation ID: ${citation.citation_id}.`);
-  }
-
-  switch ( citation.citation_id ) {
-    case CitationIds.CitationIDNoPlateFound:
-      return [noValidPlate];
-      break;
-
-    case CitationIds.CitationIDNoCitationsFound:
-      return [
-        `${noCitationsFoundMessage}${formatPlate(citation.license)}` +
-        "\n\n" +
-        citationQueryText.replace('__LICENSE__', formatPlate(citation.license)).replace('__COUNT__', query_count.toString())
-      ];
-      break;
-
-    default:
-      throw new Error(`ERROR: Unexpected citation ID: ${citation.citation_id}.`);
-      break;
-  }
-}
-
-export function chompTweet(tweet: Twit.Twitter.Status) {
+function chompTweet(tweet) {
   // Extended tweet objects include the screen name of the tweeting user within the full_text,
   // as well as all replied-to screen names in the case of a reply.
   // Strip off those because if UserA tweets a license plate and references the bot and then
@@ -1082,7 +975,7 @@ export function chompTweet(tweet: Twit.Twitter.Status) {
 }
 
 // Extract the state:license and optional flags from tweet text.
-function parseTweet(text: string) {
+function parseTweet(text) {
   var state;
   var plate;
   const matches = licenseRegExp.exec(text);
@@ -1093,7 +986,7 @@ function parseTweet(text: string) {
     state = matches[1];
     plate = matches[2];
 
-    if (StatesAndProvinces.indexOf(state.toUpperCase()) < 0) {
+    if (license.StatesAndProvinces.indexOf(state.toUpperCase()) < 0) {
       handleError(new Error(`Invalid state: ${state}`));
     }
   }
@@ -1104,22 +997,37 @@ function parseTweet(text: string) {
   };
 }
 
-function mungeObject(o: any, propertyOverrides: { [ key: string ]: any }): void {
-  for (var p in o) {
-    if (o.hasOwnProperty(p)) {
-      if (p in propertyOverrides) {
-        // OK, we need to override this property if it is undefined, null or empty string
-        var val = o[p];
-        
-        if (val == undefined || val == null || val == "") {
-          o[p] = propertyOverrides[p];
-        }
+function mungeCitation(citation) {
+  // This munging needs to move into the Seattle module
+  // DynamoDB does not allow writing null or empty string,
+  // which is f*cking stupid but...
+  var columns = {
+    CaseNumber: -1,
+    ChargeDocNumber: "None",
+    Citation: "None",
+    CollectionsStatus: "None",
+    FilingDate: "None",
+    InCollections: "false",
+    Status: "None",
+    Type: "None",
+    ViolationDate: "None",
+    ViolationLocation: "None"
+  };
+
+  for (var columnName in columns) {
+    if (citation.hasOwnProperty(columnName)) {
+      // Only update the column value if it is null or empty string
+      if (citation[columnName] == null || citation[columnName] == "") {
+        citation[columnName] = columns[columnName];
       }
+    } else {
+      // add the column
+      citation[columnName] = columns[columnName];
     }
   }
 }
 
-function GetQueryCount(license: string): Promise<number> {
+async function GetQueryCount(license) {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
   var request_records = [];
@@ -1138,155 +1046,124 @@ function GetQueryCount(license: string): Promise<number> {
     }
   };
 
-  return new Promise<number>(function(resolve, reject) {
-    // 1. Do a query to get just the request rcords for this license.
+  return new Promise(function(resolve, reject) {
+    // 1. Do a query to get just the citations that are UNPROCESSED.
     //    If the result is not complete, then we have to take the request_id's
     //    we got back and do individual queries for UNPROCESSED citations for
     //    each request_id. This ensures we process all the citations for a given
     //    request together. This is required cause we tweet out summaries/totals.
-    docClient.query(params, function(err: Error, result) {
+    docClient.query(params, function(err, result) {
       if (err) {
         handleError(err);
       } else {
-        resolve( result.Count );
+        resolve(result.Count);
       }
     });
-  })
+  });
 }
 
-function SendResponses(mutex_client: Client, T: Twit, origTweet: Twit.Twitter.Status, report_items: Array<IReportItemRecord>): Promise<number> {
+function SendResponses(mutex_client, T, origTweet, report_items) {
   if (report_items.length == 0) {
     // return an promise that is already resolved, ending the recursive
     // chain of promises that have been built.
-    return Promise.resolve(0);
+    return Promise.resolve();
   }
 
   // Clone the report_items array so we don't modify the one passed to us
-  var report_items_clone: Array<IReportItemRecord> = [...report_items];
-  var report_item: IReportItemRecord = report_items_clone.shift();
-  var replyToScreenName: string = origTweet.user.screen_name;
-  var replyToTweetId: string = origTweet.id_str;
+  var report_items_clone = [...report_items];
+  var report_item = report_items_clone.shift();
+  var replyToScreenName = origTweet.user.screen_name;
+  var replyToTweetId = origTweet.id_str;
 
   /* Now we can respond to each tweet. */
   var tweetText = "@" + replyToScreenName + " " + report_item.tweet_text;
   log.debug(`Sending Tweet: ${tweetText}.`);
-  return new Promise<number>( (resolve, reject) => {
-    let tweets_sent: number = 0;
-    
+  return new Promise((resolve, reject) => {
     // There will be one thread running this for each request we are
     // processing. We need to make sure we don't send tweets in quick
     // succession or Twitter will tag them as spam and they won't
     // render i the thread of resposes.
     // So wait at least INTER_TWEET_DELAY_MS ms between posts.
-    let mutex_key = GetHowsMyDrivingId();
+    log.debug(`Acquiring mutex ${MUTEX_NAME_TWIT_POST}...`);
+    debugger;
     
-    log.debug(`Acquiring mutex ${mutex_key}...`);
-    var mutex_promise;
     
-    if (mutex_client) {
-      mutex_promise = mutex_client.acquireLock(mutex_key, {
-        ttl: MUTEX_TWIT_POST_MAX_HOLD_MS, 
-        maxRetries: MUTEX_TWIT_POST_MAX_RETRIES, 
-        lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-      });
-    }
-    else {
-      mutex_promise = Promise.resolve( { id: "id", key: "key"} );
-    }
-    
-    mutex_promise.then( (v) => {
-      log.debug(`Acquired mutex ${v.id} and received key ${v.key}.`);
-      T.post(
-        "statuses/update",
-        {
-          status: tweetText,
-          in_reply_to_status_id: replyToTweetId
-          /*,
-          auto_populate_reply_metadata: true*/
-        } as Twit.Params,
-        (err: Error, data: Twit.Twitter.Status, response: http.IncomingMessage) => {
-          let twit_error_code: number = 0;
-          
-          if (err && err.hasOwnProperty("code")) {
-            twit_error_code = (err as any)["code"];
-          }
-          
-          if (err && twit_error_code != 187) {
-            if (mutex_client) {
-              log.debug(`Releasing mutex key=${v.key}, id:${v.id}...`);
-              mutex_client.releaseLock(v.key, { id: v.id, force: true });
-              log.debug(`Released mutex key=${v.key}, id:${v.id}...`);
-            }
-            handleError(err);
-          } else {
-            if (err && twit_error_code == 187) {
-              // This appears to be a "status is a duplicate" error which
-              // means we are trying to resend a tweet we already sent.
-              // Pretend we succeeded.
-              log.warn('Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.');
-
-              // Keep replying to the tweet we were told to reply to.
-              // This means that in this scenario, if any of the rest of the tweets in this
-              // thread have not been sent, they will create a new thread off the parent of
-              // this one.
-              // Not ideal, but the other alternatives are:
-              // 1) Query for the previous duplicate tweet and then pass that along
-              // 2) set all of the replies for this request to be PROCESSED even if they did not 
-              //    all get tweeted.
-              data = origTweet;
-            }
-            else {
-              tweets_sent++;
-              log.info(`Sent tweet: ${printTweet(data)}.`);
-            }
-
-            // Wait a bit. It seems tweeting a whackload of tweets in quick succession
-            // can cause Twitter to think you're a troll bot or something and then some
-            // of the tweets will not display for users other than the bot account.
-            // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-            sleep(report_items_clone.length > 0 ? INTER_TWEET_DELAY_MS : 0).then( () => {
-              // Don't release the mutex until after we sleep.
-              let release_promise: Promise<any>;
-
-              if (mutex_client) {
-                log.debug(`Releasing mutex key=${v.key}, id:${v.id}...`);
-                release_promise = mutex_client.releaseLock(v.key, { id: v.id, force: true });
-                log.debug(`Released mutex key=${v.key}, id:${v.id}...`);
+    mutex_client.acquire(MUTEX_NAME_TWIT_POST, {
+      ttl: MUTEX_TWIT_POST_MAX_HOLD_MS, 
+      retries: MUTEX_TWIT_POST_MAX_RETRIES, 
+      lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
+    }).then( ({id, key}) => {
+          log.debug(`Acquired mutex ${MUTEX_NAME_TWIT_POST}.`);
+          T.post(
+            "statuses/update",
+            {
+              status: tweetText,
+              in_reply_to_status_id: replyToTweetId,
+              auto_populate_reply_metadata: true
+            },
+            function(err, data, response) {
+              if (err && err.code != 187) {
+                log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
+                log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
+                handleError(err);
               } else {
-                log.debug(`Faking release of mutex key=${v.key}, id:${v.id}...`);
-                let dummy:Object = null;
-                release_promise = Promise.resolve(dummy);
-              }
-              
-              release_promise
-                .then( () => {
-                  log.debug(`Released mutex key=${v.key}, id:${v.id}...`);
-                })
-                .catch( ( err: Error ) => {
-                  handleError( err );
-                })
-                .finally( () => {
-                  // Send the rest of the responses. When those are sent, then resolve
-                  // the local Promise.
-                  SendResponses(mutex_client, T, data, report_items_clone)
-                    .then(tweets_sent_rest => {
-                      tweets_sent += tweets_sent_rest
-                      resolve(tweets_sent);
-                    })
-                    .catch( (err: Error) => {
-                      handleError(err);
-                    });
+                if (err && err.code == 187) {
+                  // This appears to be a "status is a duplicate" error which
+                  // means we are trying to resend a tweet we already sent.
+                  // Pretend we succeeded.
+                  log.error(`Received error 187 from T.post which means we already posted this tweet. Pretend we succeeded.`);
+
+                  // Keep replying to the tweet we were told to reply to.
+                  // This means that in this scenario, if any of the rest of the tweets in this
+                  // thread have not been sent, they will create a new thread off the parent of
+                  // this one.
+                  // Not ideal, but the other alternatives are:
+                  // 1) Query for the previous duplicate tweet and then pass that along
+                  // 2) set all of the replies for this request to be PROCESSED even if they did not 
+                  //    all get tweeted.
+                  data = origTweet;
+                }
+                else {
+                  log.debug(`Sent tweet: ${printTweet(data)}.`);
+                }
+
+                // Wait a bit. It seems tweeting a whackload of tweets in quick succession
+                // can cause Twitter to think you're a troll bot or something and then some
+                // of the tweets will not display for users other than the bot account.
+                // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
+                sleep(INTER_TWEET_DELAY_MS).then( () => {
+                  // Don't release the mutex until after we sleep.
+                  log.debug(`Releasing mutex ${MUTEX_NAME_TWIT_POST}...`);
+                  mutex_client.release(key, id).then( (v) => {
+                    log.debug(`Released mutex ${MUTEX_NAME_TWIT_POST}.`);
+                  
+                    // Send the rest of the responses. When those are sent, then resolve
+                    // the local Promise.
+                    SendResponses(mutex_client, T, data, report_items_clone)
+                      .then(tweet => {
+                        resolve(data);
+                      })
+                      .catch(err => {
+                        handleError(err);
+                      });
+                  }).catch( (err) => {
+                    log.debug(`Error closing mutex ${MUTEX_NAME_TWIT_POST}.`);
+                    handleError(err);
+                  });
+                    
+                }).catch( (err) => {
+                  handleError(err);
                 });
-            }).catch( (err: Error) => {
-              handleError(err);
-            });
-          }
+              }
+            }
+          );
+        }).catch( (err) => {
+          handleError(err);
         });
-    })
-    .catch ( (err: Error) => {
-      handleError(err);  
-    });
-  });
+      })
+      .catch(e => {
+        handleError(e);
+      });
 }
 
 function getLastDmId() {
@@ -1340,61 +1217,37 @@ function getLastMentionId() {
   return lastmention ? lastmention : "0";
 }
 
-function setLastDmId(lastDmId: string) {
+function setLastDmId(lastDmId) {
   lastdmLog.info(`Writing last dm id ${lastDmId}.`);
   localStorage.setItem('lastdm', lastDmId);
 }
 
-function setLastMentionId(lastMentionId: string) {
+function setLastMentionId(lastMentionId) {
   lastmentionLog.info(`Writing last mention id ${lastMentionId}.`);
   localStorage.setItem('lastmention', lastMentionId);
 }
 
 // Print out subset of tweet object properties.
-function printTweet(tweet: Twit.Twitter.Status) {
-  var shortened = "";
-  
-  console.info("In printTweet");
-  
-  if (tweet.text) {
-    log.info("text is not null.");
-    shortened = "text: " + TruncateStringEllipsis(tweet.text, 100);
-    
-    try {
-      var t = tweet.text.trunc(100);
-      log.info(`trunc of tweet.text succeeded: ${t}.`)
-    } catch ( e ) {
-      log.info(`Exception in tweet.text.trunc: ${e}.`)
-    }
-  }
-  
-  if (tweet.full_text) {
-    log.info("full_text is not null.");
-    shortened = "full_text: " + TruncateStringEllipsis(tweet.full_text, 100);
-
-    try {
-      var t = tweet.full_text.trunc(100);
-      log.info(`trunc of tweet.full_text succeeded: ${t}.`)
-    } catch ( e ) {
-      log.info(`Exception in tweet.full_text.trunc: ${e}.`)
-    }
-  }
-
+function printTweet(tweet) {
   return (
-    "Tweet: id_str: " +
+    "Tweet: id: " +
+    tweet.id +
+    ", id_str: " +
     tweet.id_str +
     ", user: " +
     tweet.user.screen_name +
     ", in_reply_to_screen_name: " +
     tweet.in_reply_to_screen_name +
+    ", in_reply_to_status_id: " +
+    tweet.in_reply_to_status_id +
     ", in_reply_to_status_id_str: " +
     tweet.in_reply_to_status_id_str +
     ", " +
-    shortened
+    tweet.full_text
   );
 }
 
-function handleError(error: Error): void {
+function handleError(error) {
   // Truncate the callstack because only the first few lines are relevant to this code.
   var stacktrace = error.stack
     .split("\n")
@@ -1406,20 +1259,23 @@ function handleError(error: Error): void {
   throw error;
 }
 
-function getTweetById(T: Twit, id: string) {
+function getTweetById(T, id) {
   // Quick check to fetch a specific tweet.
-  var promise: Promise<Twit.Twitter.Status> = new Promise<Twit.Twitter.Status>((resolve, reject) => {
+  var promise = Promise((resolve, reject) => {
     var retTweet;
 
-    T.get(`statuses/show/${id}`, { tweet_mode: "extended" }, 
-      (err: Error, tweet: Twit.Twitter.Status, response: http.IncomingMessage) => {
-        if (err) {
-          handleError(err);
-          reject(tweet);
-        }
+    T.get(`statuses/show/${id}`, { tweet_mode: "extended" }, function(
+      err,
+      tweet,
+      response
+    ) {
+      if (err) {
+        handleError(err);
+        reject(tweet);
+      }
 
-        resolve(tweet);
-      });
+      resolve(tweet);
+    });
   });
 
   promise.then( (tweet) => {
@@ -1434,16 +1290,16 @@ function getTweetById(T: Twit, id: string) {
 //   do stuff
 // })
 // Or similar pattrs that use a Promise
-const sleep = (milliseconds: number) => {
+const sleep = milliseconds => {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 };
 
 // asynchronous query function to fetch all unprocessed request records.
 // returns: promise
-function GetRequestRecords(): Promise<Array<IRequestRecord>> {
+function GetRequestRecords() {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
-  var request_records: Array<IRequestRecord> = [];
+  var request_records = [];
 
   // Query unprocessed requests
   var params = {
@@ -1469,7 +1325,7 @@ function GetRequestRecords(): Promise<Array<IRequestRecord>> {
       if (err) {
         handleError(err);
       } else {
-        request_records = result.Items as Array<IRequestRecord>;
+        request_records = result.Items;
       }
       resolve(request_records);
     });
@@ -1478,9 +1334,9 @@ function GetRequestRecords(): Promise<Array<IRequestRecord>> {
 
 // asynchronous query function to fetch all citation records.
 // returns: promise
-function GetCitationRecords(): Promise<Array<ICitationRecord>> {
+function GetCitationRecords() {
   var docClient = new AWS.DynamoDB.DocumentClient();
-  var citation_records: Array<ICitationRecord> = [];
+  var citation_records = [];
 
   // Query unprocessed citations
   var params = {
@@ -1504,57 +1360,54 @@ function GetCitationRecords(): Promise<Array<ICitationRecord>> {
     //    we got back and do individual queries for UNPROCESSED citations for
     //    each request_id. This ensures we process all the citations for a given
     //    request together. This is required cause we tweet out summaries/totals.
-    docClient.query(params, async (err: Error, result: QueryOutput) => {
+    docClient.query(params, async function(err, result) {
       if (err) {
         handleError(err);
       } else {
         // 2. De-dupe the returned request_id's.
-        var requestIDs: { [key: string ]: number} = {};
+        var requestIDs = {};
 
         result.Items.forEach(function(item) {
-          requestIDs[item.request_id as string] = 1;
+          requestIDs[item.request_id] = 1;
         });
 
         // 3. Check if we retrieved all the unprocessed citations
         if (
-          result.hasOwnProperty("LastEvaluatedKey") &&
-          result.LastEvaluatedKey
+          result.hasOwnProperty("last_evaluated_key") &&
+          result.last_evaluated_key
         ) {
           // Paging!!!!
           // Fall back to making additional query for each request_id we have, looping
           // until we get MAX_RECORDS_BATCH records.
-          var requestIndex: number = 0;
+          var requestIndex = 0;
 
           while (
             citation_records.length < MAX_RECORDS_BATCH &&
             requestIndex < Object.keys(requestIDs).length
           ) {
-            var requestID = requestIDs[requestIndex];
+            var requestID = requestIDs[Object.keys(requestIDs[requestIndex])];
             requestIndex++;
 
             // 3a. Query for the citations for this request_id
             // Use the index which includes request_id.
             params.IndexName = "request_id-processing_status-index";
             params.KeyConditionExpression =
-              `request_id = ${requestID} AND processing_status = 'UNPROCESSED'`;
+              "#request_id = :rkey AND #processing_status = :pkey";
+            params.ExpressionAttributeNames["#request_id"] = "request_id";
+            params.ExpressionAttributeValues[":rkey"] = requestID;
             params.Limit = MAX_RECORDS_BATCH; // If there is a license with more citations than this... good enough
 
             // Note: We are assuming that no single request will result in > MAX_RECORDS_BATCH citations.
-            //       I'm sure some gasshole will eventually prove us overly optimistic. 
-            await docClient.query(params, (err: Error, result: QueryOutput) => {
+            await docClient.query(params, function(err, result) {
               if (err) {
                 handleError(err);
               } else {
-                // TODO: There must be a type-safe way to do this...
-                let citation_records_batch: any = result.Items;
-                citation_records.concat(citation_records_batch as Array<ICitationRecord>);
+                citation_records.push(result.Items);
               }
             });
           }
         } else {
-          // TODO: There must be a type-safe way to do this...
-          let citation_records_batch: any = result.Items;
-          citation_records = citation_records_batch as Array<ICitationRecord>;
+          citation_records = result.Items;
         }
 
         resolve(citation_records);
@@ -1566,7 +1419,7 @@ function GetCitationRecords(): Promise<Array<ICitationRecord>> {
 function GetReportItemRecords() {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
-  var report_item_records: Array<IReportItemRecord> = [];
+  var report_item_records = [];
 
   // Query unprocessed report items
   var params = {
@@ -1596,7 +1449,7 @@ function GetReportItemRecords() {
         handleError(err);
       } else {
         // 2. De-dupe the returned request_id's.
-        var requestIDs: { [key: string ]: number} = {};
+        var requestIDs = {};
 
         result.Items.forEach(function(item) {
           requestIDs[item.request_id] = 1;
@@ -1604,8 +1457,8 @@ function GetReportItemRecords() {
 
         // 3. Check if we retrieved all the unprocessed report items
         if (
-          result.hasOwnProperty("LastEvaluatedKey") &&
-          result.LastEvaluatedKey
+          result.hasOwnProperty("last_evaluated_key") &&
+          result.last_evaluated_key
         ) {
           // Paging!!!!
           // Fall back to making additional query for each request_id we have, looping
@@ -1616,14 +1469,16 @@ function GetReportItemRecords() {
             report_item_records.length < MAX_RECORDS_BATCH &&
             requestIndex < Object.keys(requestIDs).length
           ) {
-            var requestID = requestIDs[requestIndex];
+            var requestID = requestIDs[Object.keys(requestIDs[requestIndex])];
             requestIndex++;
 
             // 3a. Query for the report items for this request_id
             // Use the index which includes request_id.
             params.IndexName = "request_id-processing_status-index";
             params.KeyConditionExpression =
-              `request_id = ${requestID} AND processing_status = 'UNPROCESSED'`;
+              "#request_id = :rkey AND #processing_status = :pkey";
+            params.ExpressionAttributeNames["#request_id"] = "request_id";
+            params.ExpressionAttributeValues[":rkey"] = requestID;
             params.Limit = MAX_RECORDS_BATCH;
 
             // Note: We are assuming that no single request will result in > MAX_RECORDS_BATCH report items.
@@ -1631,12 +1486,12 @@ function GetReportItemRecords() {
               if (err) {
                 handleError(err);
               } else {
-                report_item_records.concat(result.Items as Array<IReportItemRecord>);
+                report_item_records.push(result.Items);
               }
             });
           }
         } else {
-          report_item_records = result.Items as Array<IReportItemRecord>;
+          report_item_records = result.Items;
         }
 
         resolve(report_item_records);
@@ -1645,9 +1500,9 @@ function GetReportItemRecords() {
   });
 }
 
-function WriteReportItemRecords(docClient: AWS.DynamoDB.DocumentClient, request_id: string, citation: ICitationRecord, report_items: Array<string>) {
+function WriteReportItemRecords(docClient, request_id, citation, report_items) {
   var docClient = new AWS.DynamoDB.DocumentClient();
-  var truncated_report_items: Array<string> = [];
+  var truncated_report_items = [];
 
   // 1. Go through all report_items and split up any that will be > 280 characters when tweeted.
   // TODO: We should probably do this when processing the records, not before writing them.
@@ -1657,21 +1512,21 @@ function WriteReportItemRecords(docClient: AWS.DynamoDB.DocumentClient, request_
   var now = Date.now();
   // TTL is 10 years from now until the records are PROCESSED
   var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
-  var report_item_records: Array<object> = [];
+  var report_item_records = [];
   var record_num = 0;
 
   truncated_report_items.forEach(report_text => {
     var item = {
       PutRequest: {
         Item: {
-          id: GetHowsMyDrivingId(),
+          id: strUtils._getUUID(),
           request_id: request_id,
           record_num: record_num++,
           created: now,
           modified: now,
           ttl_expire: ttl_expire,
           processing_status: "UNPROCESSED",
-          license: citation.license,
+          license: citation.lencense,
           tweet_id: citation.tweet_id,
           tweet_id_str: citation.tweet_id_str,
           tweet_user_id: citation.tweet_user_id,
@@ -1689,14 +1544,100 @@ function WriteReportItemRecords(docClient: AWS.DynamoDB.DocumentClient, request_
   return batchWriteWithExponentialBackoff(docClient, tableNames["ReportItems"], report_item_records);
 }
 
-function getAccountID(T: Twit): Promise<number> {
+function getAccountID(T) {
   return new Promise( ( resolve, reject) => {
-    T.get("account/verify_credentials", {}, (err: Error, data: any, response: http.IncomingMessage) => {
+    T.get("account/verify_credentials", {}, function(err, data, response) {
       if (err) {
         handleError(err);
       }
       resolve(data.id);
     });    
   });
+}
+
+/*
+ * Split array of strings to ensure each string is <= maxLen
+ *
+ * Params:
+ *   source_lines: array of strings (each one may be multi-line)
+ *   maxLen:       maximum length for each element in source_lines
+ * Returns:
+ *   array of strings matching source_lines but with any elements longer
+ *   than maxLen, broken up into multiple entries, breaking on in order:
+ *   - newlines (trailing newlines on broken elements are removed)
+ *   - word breaks
+ *   - if neither above exist, then just split at maxLen characters
+ *
+ * Note: elements in source_lines are not joined if < maxLen, only broken
+ *       up if > maxLen
+ **/
+function SplitLongLines(source_lines, maxLen) {
+  var truncated_lines = [];
+
+  var index = 0;
+  source_lines.forEach(source_line => {
+    if (source_line.length > maxLen) {
+      // break it up into lines to start with
+      var chopped_lines = source_line.split("\n");
+      var current_line = "";
+      var first_line = true;
+
+      chopped_lines.forEach(line => {
+        if (line.length > maxLen) {
+          // OK we have a single line that is too long for a tweet
+          if (current_line.length > 0) {
+            truncated_lines.push(current_line);
+            current_line = "";
+            first_line = true;
+          }
+
+          // word break it into multiple items
+          var truncate_index = maxLen - 1;
+
+          // Go back until we hit a whitespace characater
+          while (truncate_index > 0 && !/\s/.test(line[truncate_index])) {
+            truncate_index--;
+          }
+
+          if (truncate_index == 0) {
+            // The line has no whitespace in it, just chop it in two
+            truncate_index = maxLen - 1;
+          }
+
+          truncated_lines.push(line.substring(0, truncate_index + 1));
+
+          // The rest of the string may still be too long.
+          // Call ourselves recursively to split it up.
+          var rest_truncated_lines = SplitLongLines(
+            [line.substring(truncate_index + 1)],
+            maxLen
+          );
+          truncated_lines = truncated_lines.concat(rest_truncated_lines);
+        } else {
+          if (current_line.length + line.length + 1 <= maxLen) {
+            if (!first_line) {
+              current_line += "\n";
+            }
+            current_line += line;
+            first_line = false;
+          } else {
+            truncated_lines.push(current_line);
+
+            // Start again
+            current_line = line;
+            first_line = true;
+          }
+        }
+      });
+
+      if (current_line.length > 0) {
+        truncated_lines.push(current_line);
+      }
+    } else {
+      truncated_lines.push(source_line);
+    }
+  });
+
+  return truncated_lines;
 }
 
