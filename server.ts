@@ -292,8 +292,6 @@ app.all("/processrequests", (request: Request, response: Response) => {
     
     GetRequestRecords()
       .then( (request_records: Array<IRequestRecord>) => {
-        log.info(`Processing ${request_records.length} request records...`);
-
         // DynamoDB does not allow any property to be null or empty string.
         // Set these values to 'None' or a default number.
         const column_overrides: { [ key: string ]: any } = {
@@ -313,6 +311,8 @@ app.all("/processrequests", (request: Request, response: Response) => {
         var request_promises: Array<Promise<void>> = [];
       
         if (request_records && request_records.length > 0) {
+          log.info(`Processing ${request_records.length} request records...`);
+
           request_records.forEach( (item) => {
             let citation_records: Array<object> = [];
             let tokens: Array<string> = item.license.split(":");
@@ -506,7 +506,7 @@ app.all("/processrequests", (request: Request, response: Response) => {
             request_promises.push(request_promise);
           });
         } else {
-          log.debug("No request records found.");
+          log.info("No request records found.");
         }
       
       Promise.all(request_promises).then( () => {
