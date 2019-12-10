@@ -1,6 +1,4 @@
 // modules
-import '../src/string-ext';
-
 import * as uuid from 'uuid';
 export const uuidv1 = uuid.v1;
 
