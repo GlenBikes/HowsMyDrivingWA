@@ -13,7 +13,7 @@ import {IRegion} from 'howsmydriving-utils';
 import {ICitation} from 'howsmydriving-utils';
 import {CompareNumericStrings} from 'howsmydriving-utils';
 import {SplitLongLines} from 'howsmydriving-utils';
-import {printTweet} from 'howsmydriving-utils';
+import {PrintTweet} from 'howsmydriving-utils';
 
 // howsmydriving-seattle
 // TODO: Put the configuration of regions in .env
@@ -837,7 +837,7 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
           data.statuses.forEach( (status: Twit.Twitter.Status) => {
             var request_records = [];
 
-            log.debug(`Found ${printTweet(status)}`);
+            log.debug(`Found ${PrintTweet(status)}`);
 
             if (CompareNumericStrings(maxTweetIdRead, status.id_str) < 0) {
               maxTweetIdRead = status.id_str;
@@ -1237,7 +1237,7 @@ function SendResponses(mutex_client: Client, T: Twit, origTweet: Twit.Twitter.St
             }
             else {
               tweets_sent++;
-              log.info(`Sent tweet: ${printTweet(data)}.`);
+              log.info(`Sent tweet: ${PrintTweet(data)}.`);
             }
 
             // Wait a bit. It seems tweeting a whackload of tweets in quick succession
