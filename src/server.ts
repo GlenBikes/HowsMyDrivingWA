@@ -637,8 +637,6 @@ app.all("/processreportitems", (request: Request, response: Response) => {
   var docClient = new AWS.DynamoDB.DocumentClient();
   var request_promises: Array<Promise<void>> = [];
 
-  log.info(`Checking for report items...`);
-
   GetReportItemRecords()
     .then( (report_items: Array<IReportItemRecord>) => {
       var reportitem_count = report_items.length;
