@@ -9,15 +9,12 @@ import * as Twit from 'twit';
 // howsmydriving-utils
 import {Citation} from 'howsmydriving-utils';
 import {CitationIds} from 'howsmydriving-utils';
+import {DumpObject} from 'howsmydriving-utils';
 import {IRegion} from 'howsmydriving-utils';
 import {ICitation} from 'howsmydriving-utils';
 import {CompareNumericStrings} from 'howsmydriving-utils';
 import {SplitLongLines} from 'howsmydriving-utils';
 import {PrintTweet} from 'howsmydriving-utils';
-
-// howsmydriving-seattle
-// TODO: Put the configuration of regions in .env
-import {SeattleRegion} from 'howsmydriving-seattle';
 
 // interfaces internal to project
 import {IRequestRecord} from './interfaces';
@@ -25,7 +22,8 @@ import {IReportItemRecord} from './interfaces';
 import {ICitationRecord} from './interfaces';
 import {CitationRecord} from './interfaces';
 import {StatesAndProvinces, formatPlate} from './interfaces';
-import {GetHowsMyDrivingId, DumpObject} from './interfaces';
+import {GetHowsMyDrivingId} from './interfaces';
+import {ReportItemRecord} from './interfaces';
 
 import {log, lastdmLog, lastmentionLog} from './logging';
 
@@ -35,14 +33,13 @@ const express = require("express"),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require("path"),
   Q = require('dynamo-batchwrite-queue'),
-  soap = require("soap");
+  //Q = require('../../util/batch-write-queue.js'),
+  soap = require("soap"),
+  pjson = require(path.resolve(__dirname + '/../../package.json'));
 
 const noCitationsFoundMessage = "No citations found for plate #",
   noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",
   citationQueryText = "License #__LICENSE__ has been queried __COUNT__ times.";
-
-// TODO: Put the regions in .env file
-let seattle: SeattleRegion = new SeattleRegion();
 
 const app = express(),
   config: any = {
@@ -81,8 +78,6 @@ export const tableNames: { [tabletype: string] : string; } = {
     ReportItems: `${process.env.DB_PREFIX}_ReportItems`
   };
 
-log.info(`${process.env.TWITTER_HANDLE}: start`);
-
 AWS.config.update({ region: "us-east-2" });
 
 const maxTweetLength: number = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
@@ -102,7 +97,7 @@ const botScreenNameRegexp: RegExp = new RegExp(
 app.use(express.static("public"));
 
 var listener = app.listen(process.env.PORT, function() {
-  log.info(`Your bot is running on port ${listener.address().port}`);
+  log.info(`${pjson.name} version: '${pjson.version}', port: ${listener.address().port}, started.`);
 });
 
 // One global broker for the live-mutex clients.
@@ -117,7 +112,36 @@ mutex_broker.emitter.on('error', function () {
 });
 
 mutex_broker.ensure().then( () => {
-  log.info(`Successfully created mutex broker.`);
+  log.debug(`Successfully created mutex broker.`);
+});
+
+// Initialize regions
+log.info("Loading regions...");
+const regions: { [ key: string ]: IRegion } = {};
+let import_promises: Array<Promise<void>> = [];
+
+process.env.REGIONS.split(',').forEach( (region_package) => {
+  region_package = region_package.trim();
+  log.info(`Loading package ${region_package}`);
+  import_promises.push( 
+    new Promise<any>( (resolve, reject) => {
+      
+      import(region_package).then ( (module) => {
+        regions[module.Region.Name] = module.Region;
+        resolve(module);
+      }).catch( (err) => {
+        handleError(err);
+      });
+      
+    }) 
+  );
+});
+
+// Wait for the imports to finish
+Promise.all(import_promises).then( (modules) => {
+  log.info(`Loaded ${modules.length} regions.`);
+}).catch( (err) => {
+  handleError(err);
 });
 
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
@@ -235,33 +259,35 @@ app.all("/dumptweet", (request: Request, response: Response) => {
 
 app.all("/dumpcitations", (request: Request, response: Response) => {
   try {
-  let state: string;
-  let plate: string;
-  if (
-    request.query.hasOwnProperty("state") &&
-    request.query.hasOwnProperty("plate")
-  ) {
-    state = request.query.state;
-    plate = request.query.plate;
-  }
-  else {
-    throw new Error("state and plate query string parameters are required.")
-  }
+    let state: string;
+    let plate: string;
+    if (
+      request.query.hasOwnProperty("state") &&
+      request.query.hasOwnProperty("plate")
+    ) {
+      state = request.query.state;
+      plate = request.query.plate;
+    }
+    else {
+      throw new Error("state and plate query string parameters are required.")
+    }
 
-  seattle
-    .GetCitationsByPlate(plate, state)
-    .then( (citations: Array<ICitation>) => {
-      var body = "Citations found:\n";
+    Object.keys(regions).forEach( (region_name) => {
+      regions[region_name]
+        .GetCitationsByPlate(plate, state)
+        .then( (citations: Array<ICitation>) => {
+          var body = "Citations found:\n";
 
-      if (!citations || citations.length == 0) {
-        response.send(noCitations);
-      } else {
-        // TODO: Can we just send the whole array as json?
-        response.json(citations);
-      }
-    })
-    .catch( (err) => {
-      handleError(err);
+          if (!citations || citations.length == 0) {
+            response.send(noCitations);
+          } else {
+            // TODO: Can we just send the whole array as json?
+            response.json(citations);
+          }
+        })
+        .catch( (err) => {
+          handleError(err);
+        });
     });
   }
   catch ( err ) {
@@ -291,10 +317,21 @@ app.all("/processrequests", (request: Request, response: Response) => {
     
     GetRequestRecords()
       .then( (request_records: Array<IRequestRecord>) => {
+        var request_promises: Array<Promise<void>> = [];
+        let citation_records: Array<object> = [];
+        let citations_written: { [id: string] : { [region_name: string] : number} } = {};
+        let licenses: { [request_id: string] : string } = {};
+      
+        // create a map of request_id to license so we can use it when logging summary
+        request_records.forEach( (request_record) => {
+          licenses[request_record.id] = request_record.license;
+        });
+      
         log.info(`Processing ${request_records.length} request records...`);
 
         // DynamoDB does not allow any property to be null or empty string.
         // Set these values to 'None' or a default number.
+        // TODO: This needs to move down into the region modules.
         const column_overrides: { [ key: string ]: any } = {
           "CaseNumber": -1,
           "ChargeDocNumber": "None",
@@ -309,142 +346,86 @@ app.all("/processrequests", (request: Request, response: Response) => {
         };
 
       
-        var request_promises: Array<Promise<void>> = [];
-      
         if (request_records && request_records.length > 0) {
           request_records.forEach( (item) => {
-            let citation_records: Array<object> = [];
             let tokens: Array<string> = item.license.split(":");
             let state: string;
             let plate: string;
+            
+            //initialize the hash for this request id.
+            citations_written[item.id] = {};
 
             if (tokens.length == 2) {
               state = tokens[0];
               plate = tokens[1];
             }
             
-            var request_promise = new Promise<void>( (resolve, reject) => {
-              if (state == null || state == "" || plate == null || plate == "") {
-                log.warn(
-                  `Not a valid state/plate in this request (${state}/${plate}).`
-                );
-                // There was no valid plate found in the tweet. Add a dummy citation.
-                var now = Date.now();
-                // TTL is 10 years from now until the records are PROCESSED
-                var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
-                var citation: ICitationRecord = {
-                  id: GetHowsMyDrivingId(),
-                  citation_id: CitationIds.CitationIDNoPlateFound,
-                  Citation: CitationIds.CitationIDNoPlateFound,
-                  processing_status: "UNPROCESSED",
-                  license: item.license,
-                  request_id: item.id,
-                  created: now,
-                  modified: now,
-                  ttl_expire: ttl_expire,
-                  tweet_id: item.tweet_id,
-                  tweet_id_str: item.tweet_id_str,
-                  tweet_user_id: item.tweet_user_id,
-                  tweet_user_id_str: item.tweet_user_id_str,
-                  tweet_user_screen_name: item.tweet_user_screen_name
-                };
+            if (!state || state === "" || !plate || plate === "") {
+              log.warn(
+                `Not a valid state/plate in this request (${state}/${plate}).`
+              );
+              
+              // There was no valid plate found in the tweet. Add a dummy citation.
+              var now = Date.now();
+              // TTL is 10 years from now until the records are PROCESSED
+              var ttl_expire: number = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+              var citation: ICitationRecord = {
+                id: GetHowsMyDrivingId(),
+                citation_id: CitationIds.CitationIDNoPlateFound,
+                Citation: CitationIds.CitationIDNoPlateFound,
+                region: 'dummy', // Not a valid region, but we don't pass this one down to region plugins.
+                processing_status: "UNPROCESSED",
+                license: item.license,
+                request_id: item.id,
+                created: now,
+                modified: now,
+                ttl_expire: ttl_expire,
+                tweet_id: item.tweet_id,
+                tweet_id_str: item.tweet_id_str,
+                tweet_user_id: item.tweet_user_id,
+                tweet_user_id_str: item.tweet_user_id_str,
+                tweet_user_screen_name: item.tweet_user_screen_name
+              };
 
-                citation_records.push({
-                  PutRequest: {
-                    Item: citation
-                  }
-                });
+              citation_records.push({
+                PutRequest: {
+                  Item: citation
+                }
+              });
+              
+              citations_written[item.id]['Invalid Plate'] = 1;
 
-                batchWriteWithExponentialBackoff(
-                  new AWS.DynamoDB.DocumentClient(),
-                  tableNames["Citations"],
-                  citation_records
-                ).then( () => {
-                      log.info(`Finished writing ${citation_records.length} citation records for ${state}:${plate}.`);          
-
-                      var params = {
-                        TableName: tableNames["Request"],
-                        Key: {
-                          id: item.id
-                        },
-                        AttributeUpdates: {
-                          processing_status: {
-                            Action: "PUT",
-                            Value: "PROCESSED"
-                          },
-                          modified: {
-                            Action: "PUT",
-                            Value: Date.now()
-                          }
-                        }
-                      };
-
-                      docClient.update(params, function(err: Error, data: any) {
-                        if (err) {
-                          handleError(err);
-                        }
-                        log.info(`Updated request ${item.id} record.`);
-                        
-                        resolve();
-                      });
-                    })
-                    .catch( (e: Error) => {
-                      handleError(e);
-                    });
+              // Add a fake promise since we didn't make any async calls so we're done.
+              request_promises.push(Promise.resolve());
               } else {
-                seattle.GetCitationsByPlate(plate, state).then( (citations) => {
-                  if (!citations || citations.length == 0) {
-                    var now = Date.now();
-                    // TTL is 10 years from now until the records are PROCESSED
-                    var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
-
-                    var citation: ICitationRecord = {
-                      id: GetHowsMyDrivingId(),
-                      citation_id: CitationIds.CitationIDNoCitationsFound,
-                      request_id: item.id,
-                      processing_status: "UNPROCESSED",
-                      license: item.license,
-                      created: now,
-                      modified: now,
-                      ttl_expire: ttl_expire,
-                      tweet_id: item.tweet_id,
-                      tweet_id_str: item.tweet_id_str,
-                      tweet_user_id: item.tweet_user_id,
-                      tweet_user_id_str: item.tweet_user_id_str,
-                      tweet_user_screen_name: item.tweet_user_screen_name
-                    };
-
-                    mungeObject(citation, column_overrides);
-
-                    citation_records.push({
-                      PutRequest: {
-                        Item: citation
-                      }
-                    });
-                  } else {
-                    citations.forEach(citation => {
+                
+                Object.keys(regions).forEach( (region_name) => {
+                  request_promises.push( new Promise<void>( (resolve, reject) => {
+                  
+                  regions[region_name].GetCitationsByPlate(plate, state).then( (citations) => {
+                    if (!citations || citations.length == 0) {
                       var now = Date.now();
                       // TTL is 10 years from now until the records are PROCESSED
-                      var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
-                      
-                      let citation_record:CitationRecord = new CitationRecord(citation);
-                      
-                      citation_record.id = GetHowsMyDrivingId();
-                      citation_record.citation_id = citation.citation_id;
-                      citation_record.request_id = item.id;
-                      citation_record.processing_status = "UNPROCESSED";
-                      citation_record.license = item.license;
-                      citation_record.created = now;
-                      citation_record.modified = now;
-                      citation_record.ttl_expire = ttl_expire;
-                      citation_record.tweet_id = item.tweet_id;
-                      citation_record.tweet_id_str = item.tweet_id_str;
-                      citation_record.tweet_user_id = item.tweet_user_id;
-                      citation_record.tweet_user_id_str = item.tweet_user_id_str;
-                      citation_record.tweet_user_screen_name = item.tweet_user_screen_name;
+                      var ttl_expire: number = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
 
-                      // DynamoDB does nonnt allow any property to be null or empty string.
-                      // Set these values to 'None'.
+                      var citation_record: ICitationRecord = {
+                        id: GetHowsMyDrivingId(),
+                        citation_id: CitationIds.CitationIDNoCitationsFound,
+                        region: region_name,
+                        request_id: item.id,
+                        processing_status: "UNPROCESSED",
+                        license: item.license,
+                        created: now,
+                        modified: now,
+                        ttl_expire: ttl_expire,
+                        tweet_id: item.tweet_id,
+                        tweet_id_str: item.tweet_id_str,
+                        tweet_user_id: item.tweet_user_id,
+                        tweet_user_id_str: item.tweet_user_id_str,
+                        tweet_user_screen_name: item.tweet_user_screen_name
+                      };
+
+                      // TODO: Move this down to the region plugins
                       mungeObject(citation_record, column_overrides);
 
                       citation_records.push({
@@ -452,67 +433,125 @@ app.all("/processrequests", (request: Request, response: Response) => {
                           Item: citation_record
                         }
                       });
-                    });
-                  }
-                  
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames["Citations"], 
-                    citation_records).then ( () => {
-                      log.info(`Finished writing ${citation_records.length} citation records for ${state}:${plate}.`);          
-                    
-                      var params = {
-                        TableName: tableNames["Request"],
-                        Key: {
-                          id: item.id
-                        },
-                        AttributeUpdates: {
-                          processing_status: {
-                            Action: "PUT",
-                            Value: "PROCESSED"
-                          },
-                          modified: {
-                            Action: "PUT",
-                            Value: Date.now()
-                          }
-                        }
-                      };
-
-                      // What happens if update gets throttled?
-                      // I don't see any info on that. Does that mean it doesn't?
-                      // It just succeeds or fails?
-                      docClient.update(params, (err: Error, data: any) => {
-                        if (err) {
-                          handleError(err);
-                        }
-                        
-                        log.info(`Updated request ${item.id} record.`);
                       
-                      // OK this is the success point for processing this reqeuest.
-                      // Resolve the Promise we are in.
-                      resolve();
-                    });
+                      if (!(region_name in citations_written[item.id])) {
+                        citations_written[item.id][region_name] = 0;
+                      }
+                      citations_written[item.id][region_name] += 1;
+                    } else {
+                      citations.forEach(citation => {
+                        var now = Date.now();
+                        // TTL is 10 years from now until the records are PROCESSED
+                        var ttl_expire: number = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+
+                        let citation_record: CitationRecord = new CitationRecord(citation);
+
+                        citation_record.id = GetHowsMyDrivingId();
+                        citation_record.citation_id = citation.citation_id;
+                        citation_record.request_id = item.id;
+                        citation_record.region = region_name;
+                        citation_record.processing_status = "UNPROCESSED";
+                        citation_record.license = item.license;
+                        citation_record.created = now;
+                        citation_record.modified = now;
+                        citation_record.ttl_expire = ttl_expire;
+                        citation_record.tweet_id = item.tweet_id;
+                        citation_record.tweet_id_str = item.tweet_id_str;
+                        citation_record.tweet_user_id = item.tweet_user_id;
+                        citation_record.tweet_user_id_str = item.tweet_user_id_str;
+                        citation_record.tweet_user_screen_name = item.tweet_user_screen_name;
+
+                        // DynamoDB does not allow any property to be null or empty string.
+                        // Set these values to 'None'.
+                        mungeObject(citation_record, column_overrides);
+
+                        citation_records.push({
+                          PutRequest: {
+                            Item: citation_record
+                          }
+                        });
+                      });
+                      
+                      if (!(region_name in citations_written[item.id])) {
+                        citations_written[item.id][region_name] = 0;
+                      }
+                      citations_written[item.id][region_name] += citations.length;
+                    }
+                    
+                    // OK we have the citations for this region/plate combination,
+                    // resolve this promise
+                    resolve();
                   }).catch( (err: Error) => {
                     handleError(err);
                   });
-                }).catch( (err: Error) => {
-                  handleError(err);
+                  })
+                );
+
                 });
+                  
               }
-            });
-            
-            request_promises.push(request_promise);
           });
+          
+        
+          Promise.all(request_promises).then( () => {
+            // We have all the citations for every request from every region.
+            // Now write the citation records for all request/region combinations
+            batchWriteWithExponentialBackoff(
+              new AWS.DynamoDB.DocumentClient(),
+              tableNames["Citations"],
+              citation_records
+            ).then( () => {
+              let msg: string = "Finished writing:";
+              
+              Object.keys(citations_written).forEach( (request_id) => {
+                Object.keys(citations_written[request_id]).forEach( (region_name) => {
+                  if (region_name === "Invalid Plate") {
+                    msg += `\n  1 citation for invalid plate in request ${request_id}.`;
+                  } else {
+                    msg += `\n  ${citations_written[request_id][region_name]} citations for ${licenses[request_id]} in region ${region_name} for request ${request_id}.`;
+                  }
+                });
+              });
+              
+              log.info(msg);
+
+              var request_update_records: Array<any> = [];
+              var now = Date.now();
+              // Now that the record is PROCESSED, TTL is 30 days 
+              var ttl_expire: number = new Date().getTime() + (30 * 24 * 60 * 60 * 1000);
+
+              request_records.forEach( (request_record) => {
+                request_record.processing_status = "PROCESSED";
+                request_record.modified = now;
+                request_record.ttl_expire = ttl_expire;
+
+                request_update_records.push({
+                  PutRequest: {
+                    Item: request_record
+                  }
+                });
+              });
+
+              batchWriteWithExponentialBackoff(
+                new AWS.DynamoDB.DocumentClient(),
+                tableNames["Request"], 
+                request_update_records
+              ).then( () => {
+                // This is the one success point for this request.
+                // All other codepaths indicate a failure.
+                log.info(`Set ${request_update_records.length} request records to PROCESSED.`)
+              }).catch ( (err: Error) => {
+                handleError(err);
+              });
+            })
+          }).catch( (err: Error) => {
+            handleError(err);
+          })
         } else {
           log.debug("No request records found.");
         }
       
-      Promise.all(request_promises).then( () => {
-        // This is the only success. Every other codepath represents a failure.
         response.sendStatus(200);
-      }).catch( (err: Error) => {
-        handleError(err);
-      })
     })
     .catch( (err: Error) => {
       handleError(err);
@@ -526,11 +565,10 @@ app.all("/processcitations", (request: Request, response: Response) => {
   try {
     var docClient = new AWS.DynamoDB.DocumentClient();
 
+    log.info("Querying citation records...");
     GetCitationRecords().then( (citations: Array<ICitationRecord>) => {
-      let request_promises: Array<Promise<void>> = [];
-      
       if (citations && citations.length > 0) {
-        let citationsByRequest: { [request_id: string] : Array<ICitationRecord> } = {};
+        let citationsByRequest: { [request_id: string] : { [region_name: string] : Array<ICitationRecord> } } = {};
         let citationsByPlate: { [plate: string] : number } = {};
 
         log.info(`Processing ${citations.length} citation records...`);
@@ -538,16 +576,20 @@ app.all("/processcitations", (request: Request, response: Response) => {
         // Sort them based on request
         citations.forEach( (citation: ICitationRecord) => {
           if (!(citation.request_id in citationsByRequest)) {
-            citationsByRequest[citation.request_id] = new Array();
+            citationsByRequest[citation.request_id] = {};
+          } 
+          
+          if (!(citation.region in citationsByRequest[citation.request_id])) {
+            citationsByRequest[citation.request_id][citation.region] = new Array<ICitation>();
           }
-
-          citationsByRequest[citation.request_id].push(citation);
+          
+          citationsByRequest[citation.request_id][citation.region].push(citation);
         });
         
-        let requestsforplate_promises: {[plate: string] : Promise<number>; } = {};
+        let requestsforplate_promises: {[plate: string] : Promise< { license: string, query_count: number } > } = {};
         
         // Kick of the DB calls to get query counts for each of these requests
-        citations.forEach( (citation) => {
+        citations.forEach( (citation, index) => {
           citationsByPlate[citation.license] = 1;
         })
         
@@ -555,78 +597,133 @@ app.all("/processcitations", (request: Request, response: Response) => {
           requestsforplate_promises[license] = GetQueryCount(license);
         })
 
+        let report_items: Array<IReportItemRecord> = [];
+        
+        // Block until all those GetQueryCount calls are done.
+        
+        Promise.all( Object.values(requestsforplate_promises) ).then ( ( license_query_pairs ) => {
+          let license_query_hash: { [license: string] : number } = {};
+      
+          license_query_pairs.forEach( (pair) => {
+            license_query_hash[pair.license] = pair.query_count;
+          });
+      
         // Now process the citations, on a per-request basis
         Object.keys(citationsByRequest).forEach( (request_id) => {
-          var request_promise: Promise<void> = new Promise<void>( (resolve, reject) => {  
-            // Get the first citation to access citation columns
-            let citation: ICitationRecord = citationsByRequest[request_id][0];
-            requestsforplate_promises[citation.license].then( (query_count ) => {
-              let report_items: Array<string> = []
-              // Check to see if there was only a dummy citation for this plate
-              if (citationsByRequest[request_id].length == 1 && citationsByRequest[request_id][0].citation_id < CitationIds.MINIMUM_CITATION_ID) {
-               report_items = GetReportItemForPseudoCitation(citationsByRequest[request_id][0], query_count);
-              }                
-              else {
-                report_items = seattle
-                  .ProcessCitationsForRequest(citationsByRequest[request_id], query_count);
-              }
+          
+          Object.keys(citationsByRequest[request_id]).forEach( (region_name) => {
+              // Get the first citation to access citation columns
+              let citation: ICitationRecord = citationsByRequest[request_id][region_name][0];
 
-                // Write report items
-              WriteReportItemRecords(docClient, request_id, citation, report_items)
-                .then( () => {
-                  log.info(`Wrote ${report_items.length} report item records for request ${request_id}.`)
-                  // Set the processing status of all the citations
-                  var citation_records: any = [];
-                  var now = Date.now();
-                  // Now that the record is PROCESSED, TTL is 1 month 
-                  var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+                
+                
+                
+                
+                  // Check to see if there was only a dummy citation for this plate
+                  if (citationsByRequest[request_id][region_name].length == 1 && citation.citation_id < CitationIds.MINIMUM_CITATION_ID) {
+                    let message: string = GetReportItemForPseudoCitation(citation, license_query_hash[citation.license]);
+                    
+                    report_items.push(new ReportItemRecord(message, 0, citation));
+                  }
+                  else {
+                    log.info(`Processing citations for request ${request_id} region ${region_name}.`)
+                    let messages = regions[region_name]
+                      .ProcessCitationsForRequest(citationsByRequest[request_id][region_name], license_query_hash[citation.license]);
+                    log.info(`Finished processing citations for request ${request_id} region ${region_name}.`);
+                    
+                    // 1. Go through all messages and split up any that will be > 280 characters when tweeted.
+                    // TODO: We should probably do this when processing the records, not before writing them.
+                    let truncated_messages: Array<string> = SplitLongLines(messages, maxTweetLength);
 
-                  citationsByRequest[request_id].forEach(citation => {
-                    citation.processing_status = "PROCESSED";
-                    citation.modified = now;
-                    citation.ttl_expire = ttl_expire;
-
-                    citation_records.push({
-                      PutRequest: {
-                        Item: citation
-                      }
+                    truncated_messages.forEach( (message, index) => {
+                      report_items.push(new ReportItemRecord(message, index-1, citationsByRequest[request_id][region_name][0]));
                     });
-                  });
+                    
+                    log.info(`Created ${truncated_messages.length} report item records for request ${request_id} region ${region_name}.`);
+                  }
 
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames["Citations"], 
-                    citation_records
-                  ).then( () => {
-                    log.info(`Set ${citation_records.length} citation records for request ${request_id} to PROCESSED.`)
-                    // This is the one success point for this request.
-                    // All other codepaths indicate a failure.
-                    resolve();
-                  }).catch ( (err: Error) => {
-                    handleError(err);
-                  });
-
-                })
-                .catch( (e: Error) => {
-                  handleError(e);
-                })
-              });
+                
+                
+                
+                
+                
           });
-
-          request_promises.push(request_promise);
         });
-      } else {
-        log.info("No citations found.");
-      }
       
-      Promise.all(request_promises).then( () => {
-        // This is the one success point for all citations being processed.
-        // Every other codepath is a failure of some kind.
+      
+      
+      
+      
+      
+        // THIS IS WHERE THE DB WRITE SHOULD BE!!!
+        // Create the report item records
+      
+        // Write report 
+        log.info(`Writing ${report_items.length} total report item records.`);
+
+        WriteReportItemRecords(new AWS.DynamoDB.DocumentClient(), report_items)
+          .then( () => {
+            log.info(`Wrote ${report_items.length} report item records.`)
+            // Set the processing status of all the citations
+            var citation_records: any = [];
+            var now = Date.now();
+            // Now that the record is PROCESSED, TTL is 30 days 
+            var ttl_expire: number = new Date().getTime() + (30 * 24 * 60 * 60 * 1000);
+
+            let msg: string = "Updated to PROCESSED:";
+          
+            Object.keys(citationsByRequest).forEach( (request_id) => {
+              msg += `\n  ${Object.keys(citationsByRequest[request_id]).length} citation records for request ${request_id}`
+              
+              Object.keys(citationsByRequest[request_id]).forEach( (region_name) => {
+                citationsByRequest[request_id][region_name].forEach( (citation, index) => {
+                  citation.processing_status = "PROCESSED";
+                  citation.modified = now;
+                  citation.ttl_expire = ttl_expire;
+
+                  citation_records.push({
+                    PutRequest: {
+                      Item: citation
+                    }
+                  });
+                });
+              });
+            });
+          
+            log.info(`Updating ${citation_records.length} citation records...`);
+
+            batchWriteWithExponentialBackoff(
+              new AWS.DynamoDB.DocumentClient(),
+              tableNames["Citations"], 
+              citation_records
+            ).then( () => {
+              // This is the one success point for this request.
+              // All other codepaths indicate a failure.
+              log.info(msg);
+
+              // This is the one success point for all citations being processed.
+              // Every other codepath is a failure of some kind.
+              log.info("Processing citations completed successfully.")
+
+              response.sendStatus(200);
+            }).catch ( (err: Error) => {
+              handleError(err);
+            });
+
+          })
+          .catch( (e: Error) => {
+            handleError(e);
+          });
+        });
+    } else {
+        log.info("No citations found.");
         response.sendStatus(200);
-      })
+    }
+      
     }).catch( (err: Error) => {
       handleError(err);
     });
+
   } catch (err ) {
     response.status(500).send(err);
   }
@@ -644,128 +741,133 @@ app.all("/processreportitems", (request: Request, response: Response) => {
 
       if (report_items && report_items.length > 0) {
         log.info(`Processing ${report_items.length} report items...`)
-        var reportItemsByRequest: { [request_id: string] : Array<IReportItemRecord>; } = {};
+        var reportItemsByRequest: { [request_id: string] : { [region_name: string] : Array<IReportItemRecord> } } = {};
 
-        // Sort them based on request
+        // Sort them based on request and region
         report_items.forEach(report_item => {
           if (!(report_item.request_id in reportItemsByRequest)) {
-            reportItemsByRequest[report_item.request_id] = new Array();
+            reportItemsByRequest[report_item.request_id] = {};
+          }
+          
+          if (!(report_item.region in reportItemsByRequest[report_item.request_id])) {
+            reportItemsByRequest[report_item.request_id][report_item.region] = [];
           }
 
-          reportItemsByRequest[report_item.request_id].push(report_item);
+          reportItemsByRequest[report_item.request_id][report_item.region].push(report_item);
         });
 
-        // For each request, we need to sort the report items since the order
+        // For each request/region, we need to sort the report items since the order
         // they are tweeted in matters.
         Object.keys(reportItemsByRequest).forEach(request_id => {
-          reportItemsByRequest[request_id] = reportItemsByRequest[
-            request_id
-          ].sort(function(a, b) {
-            return a.record_num - b.record_num;
+          Object.keys(reportItemsByRequest[request_id]).forEach( (region_name) => {
+            reportItemsByRequest[request_id][region_name] = reportItemsByRequest[
+              request_id
+            ][region_name].sort(function(a, b) {
+              return a.record_num - b.record_num;
+            });
           });
         });
 
-        // Now process the report_items, on a per-request basis
+        // Now process the report_items, on a per-request/region basis
         Object.keys(reportItemsByRequest).forEach(request_id => {
-          var request_promise: Promise<void> = new Promise<void> ( (resolve, reject) => {
-            // Get the first report_item to access report_item columns
-            var report_item = reportItemsByRequest[request_id][0];
-            // Build a fake tweet for the request report_item
-            let user: Twit.Twitter.User = {} as Twit.Twitter.User;
-            
-            
-            user.screen_name = report_item.tweet_user_screen_name;
+          Object.keys(reportItemsByRequest[request_id]).forEach( (region_name) => {
+            var request_promise: Promise<void> = new Promise<void> ( (resolve, reject) => {
+              // Get the first report_item to access report_item columns
+              var report_item = reportItemsByRequest[request_id][region_name][0];
 
-            let origTweet: Twit.Twitter.Status = {
-              id: report_item.tweet_id,
-              id_str: report_item.tweet_id_str,
-              user: user
-            } as Twit.Twitter.Status;
+              // Build a fake tweet for the request report_item
+              let user: Twit.Twitter.User = {} as Twit.Twitter.User;
+              user.screen_name = report_item.tweet_user_screen_name;
 
-            log.debug(`Creating mutex for SendResponses...`);
-            var mutex_client: Client = new LMXClient();
-            
-            mutex_client.emitter.on('info', function () {
-              log.debug(...arguments);
-            });
+              let origTweet: Twit.Twitter.Status = {
+                id: report_item.tweet_id,
+                id_str: report_item.tweet_id_str,
+                user: user
+              } as Twit.Twitter.Status;
 
-            mutex_client.emitter.on('warning', function () {
-              log.warn(...arguments);
-            });
+              log.debug(`Creating mutex for SendResponses...`);
+              var mutex_client: Client = new LMXClient();
 
-            mutex_client.emitter.on('error', function () {
-              log.error(...arguments);
-            });
+              mutex_client.emitter.on('info', function () {
+                log.debug(...arguments);
+              });
 
-            mutex_client.connect().then( (client) => {
-              log.info(`Successfully created mutex client.`);
-            }).catch( (err: Error) => {
-              log.info(`Failed to create mutex client/broker. Proceeding without them. Err: ${err}.`);
-              mutex_client = undefined;
-            }).finally( () => {
+              mutex_client.emitter.on('warning', function () {
+                log.warn(...arguments);
+              });
 
-              log.info(`Posting tweets for ${reportItemsByRequest[request_id][0].license}, request ${request_id}.`);
-              // Send a copy of the report items to SendResponse since we need to
-              SendResponses(
-                mutex_client,
-                T,
-                origTweet,
-                reportItemsByRequest[request_id]
-              )
-                .then( ( tweets_sent_count ) => {
-                  log.info(
-                    `Finished sending ${reportItemsByRequest[request_id].length} tweets for request ${reportItemsByRequest[request_id][0].request_id}.`
-                  );
+              mutex_client.emitter.on('error', function () {
+                log.error(...arguments);
+              });
 
-                  tweet_count =
-                    tweet_count + tweets_sent_count;
+              mutex_client.connect().then( (client) => {
+                log.info(`Successfully created mutex client.`);
+              }).catch( (err: Error) => {
+                log.info(`Failed to create mutex client/broker. Proceeding without them. Err: ${err}.`);
+                mutex_client = undefined;
+              }).finally( () => {
+                log.info(`Posting tweets for ${report_item.license}, request ${request_id}, retion ${region_name}.`);
+                
+                // Send a copy of the report items to SendResponse since we need to
+                SendResponses(
+                  mutex_client,
+                  T,
+                  origTweet,
+                  reportItemsByRequest[request_id][region_name]
+                )
+                  .then( ( tweets_sent_count ) => {
+                    log.info(
+                      `Finished sending ${reportItemsByRequest[request_id][region_name].length} tweets for request ${report_item.request_id} region ${region_name}.`
+                    );
 
-                  log.debug(`Closing mutex for SendResponses.`);
-                  if (mutex_client) {
-                    mutex_client.close();
-                  }
+                    tweet_count =
+                      tweet_count + tweets_sent_count;
 
-                  // Set the processing status of all the report_items
-                  var report_item_records: Array<object> = [];
-                  var now = Date.now();
-                  // Now that the record is PROCESSED, TTL is 1 month
-                  var ttl_expire = new Date(now).setFullYear(
-                    new Date(now).getFullYear() + 10
-                  );
+                    log.debug(`Closing mutex for SendResponses.`);
+                    if (mutex_client) {
+                      mutex_client.close();
+                    }
 
-                  reportItemsByRequest[request_id].forEach(report_item => {
-                    report_item.processing_status = "PROCESSED";
-                    report_item.modified = now;
-                    report_item.ttl_expire = ttl_expire;
+                    // Set the processing status of all the report_items
+                    var report_item_records: Array<object> = [];
+                    var now = Date.now();
+                    // Now that the record is PROCESSED, TTL is 30 days
+                    var ttl_expire: number = new Date().getTime() + (30 * 24 * 60 * 60 * 1000);
 
-                    report_item_records.push({
-                      PutRequest: {
-                        Item: report_item
-                      }
+                    reportItemsByRequest[request_id][region_name].forEach(report_item => {
+                      report_item.processing_status = "PROCESSED";
+                      report_item.modified = now;
+                      report_item.ttl_expire = ttl_expire;
+
+                      report_item_records.push({
+                        PutRequest: {
+                          Item: report_item
+                        }
+                      });
                     });
-                  });
 
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames["ReportItems"],
-                    report_item_records
-                  )
-                  .then( () => {
-                    // This is the one and only success point for these report item records.
-                    // Every other codepath is an error of some kind.
-                    resolve();
+                    batchWriteWithExponentialBackoff(
+                      new AWS.DynamoDB.DocumentClient(),
+                      tableNames["ReportItems"],
+                      report_item_records
+                    )
+                    .then( () => {
+                      // This is the one and only success point for these report item records.
+                      // Every other codepath is an error of some kind.
+                      resolve();
+                    })
+                    .catch( (err: Error) => {
+                      handleError(err);
+                    });
                   })
                   .catch( (err: Error) => {
                     handleError(err);
                   });
-                })
-                .catch( (err: Error) => {
-                  handleError(err);
-                });
-            })
+              })
+            });
+
+            request_promises.push(request_promise);
           });
-          
-          request_promises.push(request_promise);
         });
       } else {
         log.info("No report items found.");
@@ -815,7 +917,6 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
       function(err: Error, data: Twit.Twitter.SearchResults, response: http.IncomingMessage) {
         if (err) {
           handleError(err);
-          return false;
         }
 
         let num_tweets: number = data.statuses.length;
@@ -831,7 +932,7 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
           and write that at the end.
           */
           data.statuses.forEach( (status: Twit.Twitter.Status) => {
-            var request_records = [];
+            var request_records: Array<any> = [];
 
             log.debug(`Found ${PrintTweet(status)}`);
 
@@ -853,25 +954,28 @@ export function processNewTweets(T: Twit, docClient: AWS.DynamoDB.DocumentClient
                 log.debug("Ignoring our own tweet: " + status.full_text);
               } else {
                 const { state, plate } = parseTweet(chomped_text);
+                const noPlate: boolean = !state || !plate || state === "" || plate === "";
+                
                 var now = Date.now();
-                var item = {
-                  PutRequest: {
-                    Item: {
-                      id: GetHowsMyDrivingId(),
-                      license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
-                      created: now,
-                      modified: now,
-                      processing_status: "UNPROCESSED",
-                      tweet_id: status.id,
-                      tweet_id_str: status.id_str,
-                      tweet_user_id: status.user.id,
-                      tweet_user_id_str: status.user.id_str,
-                      tweet_user_screen_name: status.user.screen_name
-                    }
-                  }
-                };
 
-                request_records.push(item);
+                  var item = {
+                    PutRequest: {
+                      Item: {
+                        id: GetHowsMyDrivingId(),
+                        license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
+                        created: now,
+                        modified: now,
+                        processing_status: "UNPROCESSED",
+                        tweet_id: status.id,
+                        tweet_id_str: status.id_str,
+                        tweet_user_id: status.user.id,
+                        tweet_user_id_str: status.user.id_str,
+                        tweet_user_screen_name: status.user.screen_name
+                      }
+                    }
+                  };
+
+                  request_records.push(item);
               }
             } else {
               log.debug(
@@ -1029,22 +1133,20 @@ function batchWriteWithExponentialBackoff(docClient: AWS.DynamoDB.DocumentClient
   })
 }
 
-function GetReportItemForPseudoCitation(citation: ICitation, query_count: number): Array<string> {
+function GetReportItemForPseudoCitation(citation: ICitation, query_count: number): string {
   if (!citation || citation.citation_id >= CitationIds.MINIMUM_CITATION_ID) {
     throw new Error(`ERROR: Unexpected citation ID: ${citation.citation_id}.`);
   }
 
   switch ( citation.citation_id ) {
     case CitationIds.CitationIDNoPlateFound:
-      return [noValidPlate];
+      return noValidPlate;
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
-      return [
-        `${noCitationsFoundMessage}${formatPlate(citation.license)}` +
+      return `${noCitationsFoundMessage}${formatPlate(citation.license)}` +
         "\n\n" +
-        citationQueryText.replace('__LICENSE__', formatPlate(citation.license)).replace('__COUNT__', query_count.toString())
-      ];
+        citationQueryText.replace('__LICENSE__', formatPlate(citation.license)).replace('__COUNT__', query_count.toString());
       break;
 
     default:
@@ -1115,7 +1217,7 @@ function mungeObject(o: any, propertyOverrides: { [ key: string ]: any }): void 
   }
 }
 
-function GetQueryCount(license: string): Promise<number> {
+function GetQueryCount(license: string): Promise< { license: string, query_count: number } > {
   var docClient = new AWS.DynamoDB.DocumentClient();
 
   var request_records = [];
@@ -1134,20 +1236,22 @@ function GetQueryCount(license: string): Promise<number> {
     }
   };
 
-  return new Promise<number>(function(resolve, reject) {
+  return new Promise< { license: string, query_count: number } >( (resolve, reject) => {
     // 1. Do a query to get just the request rcords for this license.
     //    If the result is not complete, then we have to take the request_id's
     //    we got back and do individual queries for UNPROCESSED citations for
     //    each request_id. This ensures we process all the citations for a given
     //    request together. This is required cause we tweet out summaries/totals.
-    docClient.query(params, function(err: Error, result) {
+    docClient.query(params, (err: Error, result: AWS.DynamoDB.Types.QueryOutput) => {
       if (err) {
         handleError(err);
-      } else {
-        resolve( result.Count );
       }
+      
+      let query_count: number = result.Count;
+      
+      resolve( { license, query_count } );
     });
-  })
+  });
 }
 
 function SendResponses(mutex_client: Client, T: Twit, origTweet: Twit.Twitter.Status, report_items: Array<IReportItemRecord>): Promise<number> {
@@ -1177,6 +1281,7 @@ function SendResponses(mutex_client: Client, T: Twit, origTweet: Twit.Twitter.St
   } else {
     log.info(`Account ${replyToScreenName} === ${process.env.TWITTER_HANDLE}.`)
   }
+  
   tweetText += report_item.tweet_text;
   log.debug(`Sending Tweet: ${tweetText}.`);
   return new Promise<number>( (resolve, reject) => {
@@ -1506,7 +1611,7 @@ function GetCitationRecords(): Promise<Array<ICitationRecord>> {
 
             // Note: We are assuming that no single request will result in > MAX_RECORDS_BATCH citations.
             //       I'm sure some gasshole will eventually prove us overly optimistic. 
-            await docClient.query(params, (err: Error, result: QueryOutput) => {
+            await docClient.query(params, (err: Error, result) => {
               if (err) {
                 handleError(err);
               } else {
@@ -1610,47 +1715,22 @@ function GetReportItemRecords() {
   });
 }
 
-function WriteReportItemRecords(docClient: AWS.DynamoDB.DocumentClient, request_id: string, citation: ICitationRecord, report_items: Array<string>) {
-  var docClient = new AWS.DynamoDB.DocumentClient();
-  var truncated_report_items: Array<string> = [];
-
-  // 1. Go through all report_items and split up any that will be > 280 characters when tweeted.
-  // TODO: We should probably do this when processing the records, not before writing them.
-  truncated_report_items = SplitLongLines(report_items, maxTweetLength);
-
-  // 2. Build the report item records
-  var now = Date.now();
-  // TTL is 10 years from now until the records are PROCESSED
-  var ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);
+function WriteReportItemRecords(docClient: AWS.DynamoDB.DocumentClient, report_items: Array<IReportItemRecord>) {
   var report_item_records: Array<object> = [];
-  var record_num = 0;
 
-  truncated_report_items.forEach(report_text => {
+  report_items.forEach( (report_item, index) => {
     var item = {
       PutRequest: {
-        Item: {
-          id: GetHowsMyDrivingId(),
-          request_id: request_id,
-          record_num: record_num++,
-          created: now,
-          modified: now,
-          ttl_expire: ttl_expire,
-          processing_status: "UNPROCESSED",
-          license: citation.license,
-          tweet_id: citation.tweet_id,
-          tweet_id_str: citation.tweet_id_str,
-          tweet_user_id: citation.tweet_user_id,
-          tweet_user_id_str: citation.tweet_user_id_str,
-          tweet_user_screen_name: citation.tweet_user_screen_name,
-          tweet_text: report_text
-        }
+        Item: report_item
       }
     };
 
     report_item_records.push(item);
   });
+  
+  log.debug(`Calling batchWriteWithExponentialBackoff with ${report_item_records.length} report item records.`);
 
-  // 3. Write the report item records, returning that Promise. 
+  // Write the report item records, returning that Promise. 
   return batchWriteWithExponentialBackoff(docClient, tableNames["ReportItems"], report_item_records);
 }
 

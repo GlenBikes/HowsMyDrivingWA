@@ -1,6 +1,6 @@
 {
   "name": "HowsMyDrivingWA",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Tweet a license # at me! I'll look it up for you.",
   "main": "./dist/src/server.js",
   "scripts": {
@@ -26,8 +26,9 @@
     "chokidar": "^3.3.0",
     "dynamo-batchwrite-queue": "^1.0.1",
     "express": "^4.14.0",
-    "howsmydriving-seattle": "^0.1.3",
-    "howsmydriving-utils": "^0.1.27",
+    "howsmydriving-dummy": "^0.1.7",
+    "howsmydriving-seattle": "^0.1.12",
+    "howsmydriving-utils": "^0.1.34",
     "gulp": "^3.9.1",
     "gulp-clean": "^0.4.0",
     "gulp-cli": "^2.2.0",
