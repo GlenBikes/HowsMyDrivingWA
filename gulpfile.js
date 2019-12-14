@@ -1,4 +1,5 @@
 const gulp = require('gulp');
+const mocha = require('gulp-mocha');
 const ts = require('gulp-typescript');
 const jasmine = require('gulp-jasmine');
 const clean = require('gulp-clean');
@@ -22,22 +23,18 @@ gulp.task('clean', function () {
         .pipe(clean());
 });
 
-/*
 gulp.task('test:run', function() {
     return gulp.src('dist/spec/**')
       .pipe(jasmine())
 });
-*/
 
 gulp.task('watch', ['default'], function() {
     gulp.watch('src/*.ts', ['default']);
 });
 
-/*
 gulp.task('test', [], function(cb) {
   runSequence('clean', 'build', 'test:run', cb);
 });
-*/
 
 gulp.task('default', [], function(cb) {
     runSequence('clean', 'build', cb);

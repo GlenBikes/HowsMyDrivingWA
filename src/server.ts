@@ -204,14 +204,16 @@ app.all("/tweet", function(request: Request, response: Response) {
   });
 });
 
-app.all("/test", function(request: Request, response: Response) {
+app.all(["/test", "/tests", "/runtest", "/runtests"], function(request: Request, response: Response) {
   // Doing the require here will cause the tests to rerun every
   // time the /test url is loaded even if no test or product
   // code has changed.
   var Mocha = require("mocha");
   // Instantiate a Mocha instance.
   var mocha = new Mocha();
-  var testDir = "./test";
+  var testDir = path.resolve(path.join(__dirname, "../test"));
+  
+  log.info(`testDir: ${testDir}`);
 
   // Add each .js file to the mocha instance
   fs.readdirSync(testDir)

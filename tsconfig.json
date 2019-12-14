@@ -7,7 +7,7 @@
     "declaration": true,
     "rootDir": ".",
     "outDir": "dist",
-    "types" : ["node", "jasmine", "@types/twit", "aws-sdk"],
+    "types" : ["aws-sdk", "jasmine", "node", "@types/sinon", "@types/twit"],
     "traceResolution": true,
     "downlevelIteration": true
   },

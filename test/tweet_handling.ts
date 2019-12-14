@@ -1,9 +1,12 @@
+import {tableNames} from '../src/server';
+import {processNewTweets} from '../src/server';
+import {createTweet} from './mocks/twitter';
+import {uuidv1} from '../util/stringutils.js'
+
 var assert = require('assert'),
-    server = require('../dist/server'),
     sinon = require('sinon'),
-    utils = require('howsmydriving-utils'),
-    strUtils = require('../dist/util/stringutils.js'),
-    twitmocks = require('../test/mocks/twitter.js');
+    strUtils = require('../util/stringutils.js'),
+    twitmocks = require('./mocks/twitter.js');
 
 describe('Tweet handling', function() {
   describe('Handle tweet with reference', function() {
@@ -20,9 +23,9 @@ describe('Tweet handling', function() {
       const stubUuid = sinon.stub(strUtils, 'uuidv1').returns( "4887b7a0-09a1-11ea-a100-f9a53a6b0433" );
 
       
-      const batchWriteSpy = sinon.spy((params, callback) => {
-        assert.equal(Object.keys(params.RequestItems)[0], server.tableNames['Request']);
-        assert.equal(params.RequestItems[server.tableNames['Request']].length, 1);
+      const batchWriteSpy = sinon.spy((params: any, callback: any) => {
+        assert.equal(Object.keys(params.RequestItems)[0], tableNames['Request']);
+        assert.equal(params.RequestItems[tableNames['Request']].length, 1);
         callback(null, { UnprocessedItems: [] });
       })
 
@@ -30,14 +33,19 @@ describe('Tweet handling', function() {
 
       var docClient = new AWS.DynamoDB.DocumentClient();
 
-      var T = {
-        get: ( path, params, cb) => {
+      var T: any = {
+        get: ( path: string, params: any, cb: any) => {
           var data = {
             statuses: [
-              twitmocks._createTweet({
+              createTweet({
                 id: 123,
                 id_str: '123',
-                full_text: `Hey ${process.env.TWITTER_HANDLE} can you look up TX:78DFSD for me?`
+                full_text: `Hey ${process.env.TWITTER_HANDLE} can you look up TX:78DFSD for me?`,
+                user: {
+                  id: 1,
+                  id_str: '2',
+                  screen_name: 'fakeuser'
+                }
               })
             ]
           };
@@ -47,7 +55,7 @@ describe('Tweet handling', function() {
       }
 
       return new Promise( ( resolve, reject ) => {
-        server.processNewTweets(T, docClient).then( () => {
+        processNewTweets(T, docClient, 12).then( () => {
           var expected_params = {
             RequestItems: {
               HMDWA_Request: [{
@@ -71,7 +79,7 @@ describe('Tweet handling', function() {
           assert(batchWriteSpy.calledOnce);
           batchWriteSpy.calledWithMatch(expected_params);
           resolve();
-        }).catch( (err) => {
+        }).catch( (err: Error) => {
           reject(err);
         }).finally( () => {
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
@@ -88,24 +96,29 @@ describe('Tweet handling', function() {
         
       awsMock.setSDKInstance(AWS);
 
-      awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
-        assert.equal(Object.keys(params.RequestItems)[0], server.tableNames['Request']);
-        assert.equal(params.RequestItems[server.tableNames['Request']].length, 1);
+      awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params: any, callback: any) {          
+        assert.equal(Object.keys(params.RequestItems)[0], tableNames['Request']);
+        assert.equal(params.RequestItems[tableNames['Request']].length, 1);
         // Make sure this is the "no license found" tweet.
-        assert.equal(params.RequestItems[server.tableNames['Request']][0].PutRequest.Item.license, ':');
+        assert.equal(params.RequestItems[tableNames['Request']][0].PutRequest.Item.license, ':');
         callback(null, { UnprocessedItems: [] });
       });
       
       var docClient = new AWS.DynamoDB.DocumentClient();
 
       var T = {
-        get: ( path, params, cb) => {
+        get: ( path:string, params: any, cb: any) => {
           var data = {
             statuses: [
-              twitmocks._createTweet({
+              createTweet({
                 id: 123,
                 id_str: '123',
-                full_text: `Hey ${process.env.TWITTER_HANDLE} can you look up TX_78DFSD for me?`
+                full_text: `Hey ${process.env.TWITTER_HANDLE} can you look up TX_78DFSD for me?`,
+                user: {
+                  id: 2,
+                  id_str: '3',
+                  screen_name: 'fakeyuser'
+                }
               })
             ]
           };
@@ -115,10 +128,10 @@ describe('Tweet handling', function() {
       }
 
       return new Promise( ( resolve, reject ) => {
-        server.processNewTweets(T, docClient).then( () => {
+        processNewTweets(T as any, docClient, 1).then( () => {
           resolve();
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
-        }).catch ( ( err ) => {
+        }).catch ( ( err: Error ) => {
           reject(err);
         }).finally( () => {
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
@@ -134,24 +147,29 @@ describe('Tweet handling', function() {
         
       awsMock.setSDKInstance(AWS);
 
-      awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params, callback) {          
-        assert.equal(Object.keys(params.RequestItems)[0], server.tableNames['Request']);
-        assert.equal(params.RequestItems[server.tableNames['Request']].length, 1);
+      awsMock.mock('DynamoDB.DocumentClient', 'batchWrite', function(params: any, callback: any) {          
+        assert.equal(Object.keys(params.RequestItems)[0], tableNames['Request']);
+        assert.equal(params.RequestItems[tableNames['Request']].length, 1);
         // Make sure this is the "no license found" tweet.
-        assert.equal(params.RequestItems[server.tableNames['Request']][0].PutRequest.Item.license, ':');
+        assert.equal(params.RequestItems[tableNames['Request']][0].PutRequest.Item.license, ':');
         callback(null, { UnprocessedItems: [] });
       });
 
       var docClient = new AWS.DynamoDB.DocumentClient();
 
       var T = {
-        get: ( path, params, cb) => {
+        get: ( path: string, params: any, cb: any) => {
           var data = {
             statuses: [
-              twitmocks._createTweet({
+              createTweet({
                 id: 123,
                 id_str: '123',
-                full_text: `Hey ${process.env.TWITTER_HANDLE} can you look up TX_78DFSD for me?`
+                full_text: `Hey ${process.env.TWITTER_HANDLE} can you look up TX_78DFSD for me?`,
+                user: {
+                  id: 4321,
+                  id_str: '4321',
+                  screen_name: 'dummyuser'
+                }
               })
             ]
           };
@@ -161,9 +179,9 @@ describe('Tweet handling', function() {
       }
 
       return new Promise( ( resolve, reject ) => {
-        server.processNewTweets(T, docClient).then( () => {
+        processNewTweets(T as any, docClient, 1).then( () => {
           resolve();
-        }).catch( ( err ) => {
+        }).catch( ( err: Error ) => {
           throw err;
         }).finally( () => {
           awsMock.restore('DynamoDB.DocumentClient', 'batchWrite');
