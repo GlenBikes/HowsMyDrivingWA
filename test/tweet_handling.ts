@@ -1,12 +1,12 @@
 import {tableNames} from '../src/server';
 import {processNewTweets} from '../src/server';
 import {createTweet} from './mocks/twitter';
-import {uuidv1} from '../util/stringutils.js'
+import {uuidv1} from '../src/util/stringutils';
+import * as strUtils from '../src/util/stringutils';
 
 var assert = require('assert'),
     sinon = require('sinon'),
-    strUtils = require('../util/stringutils.js'),
-    twitmocks = require('./mocks/twitter.js');
+    path = require('path');
 
 describe('Tweet handling', function() {
   describe('Handle tweet with reference', function() {

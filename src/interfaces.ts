@@ -1,11 +1,17 @@
 import {ICitation} from 'howsmydriving-utils';
 import {Citation} from 'howsmydriving-utils';
-import {GetHowsMyDrivingId} from '../util/stringutils';
 
-export {StatesAndProvinces, formatPlate} from '../util/licensehelper';
-export {GetHowsMyDrivingId} from '../util/stringutils';
+import {GetHowsMyDrivingId} from './util/stringutils';
 
-export {uuidv1} from '../util/stringutils';
+export {StatesAndProvinces, formatPlate} from './util/licensehelper';
+
+export {GetHowsMyDrivingId} from './util/stringutils';
+export {uuidv1} from './util/stringutils';
+
+// TODO: Move these to HowsMyDriving-Utils
+export {ITwitterUser} from '../test/mocks/twitter';
+export {ITweet} from '../test/mocks/twitter';
+export {createTweet} from '../test/mocks/twitter';
 
 export interface IRequestRecord {
   id: string;

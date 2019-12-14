@@ -33,9 +33,8 @@ const express = require("express"),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require("path"),
   Q = require('dynamo-batchwrite-queue'),
-  //Q = require('../../util/batch-write-queue.js'),
   soap = require("soap"),
-  pjson = require(path.resolve(__dirname + '/../../package.json'));
+  pjson = require(path.resolve(__dirname + '/../package.json'));
 
 const noCitationsFoundMessage = "No citations found for plate #",
   noValidPlate = "No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #",
@@ -1494,10 +1493,14 @@ function setLastMentionId(lastMentionId: string) {
 
 function handleError(error: Error): void {
   // Truncate the callstack because only the first few lines are relevant to this code.
-  var stacktrace = error.stack
-    .split("\n")
-    .slice(0, 10)
-    .join("\n");
+  var stacktrace = "";
+  
+  if (error.stack) {
+    error.stack
+      .split("\n")
+      .slice(0, 10)
+      .join("\n");
+  }
   var formattedError = `===============================================================================\n${error.message}\n${stacktrace}`;
 
   log.error(formattedError);

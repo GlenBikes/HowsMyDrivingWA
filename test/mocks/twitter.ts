@@ -1,11 +1,11 @@
 
-interface ITwitterUser {
+export interface ITwitterUser {
   id?: number;
   id_str?: string;
   screen_name?: string;
 }
 
-interface ITweet {
+export interface ITweet {
   id?: number;
   id_str?: string;
   user_screen_name?: string;

@@ -2,9 +2,10 @@ const chokidar = require('chokidar'),
   log4js = require('log4js'),
   path = require('path');
 
+const config_path = path.resolve(__dirname + '/../config/log4js.json');
 
 // Load the config.
-log4js.configure(path.resolve(__dirname + '/../../config/log4js.json'));
+log4js.configure(config_path);
 
 export let log = log4js.getLogger("result"),
     lastdmLog = log4js.getLogger("_lastdm"),
@@ -15,7 +16,7 @@ export let log = log4js.getLogger("result"),
  * Monitor the log4js config file and reloading log instances if the file changes.
 **/
 var watcher = chokidar.watch(
-  path.resolve(__dirname + '/../../config/log4js.json'), {
+  config_path, {
     ignored: /(^|[\/\\])\../, // ignore dotfiles
     persistent: true,
     awaitWriteFinish: true
@@ -35,7 +36,7 @@ var watcher = chokidar.watch(
 function reloadlog(reason: string) {
   log.info(`Reloading log config due to config file ${reason}.`);
   log4js.shutdown( () => {
-    log4js.configure(__dirname + '/../../config/log4js.json');
+    log4js.configure(config_path);
     log = log4js.getLogger('reason');
     lastdmLog = log4js.getLogger("_lastdm");
     lastmentionLog = log4js.getLogger("_lastdm");
