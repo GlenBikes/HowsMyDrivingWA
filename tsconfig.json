@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "lib": ["es6"],
+    "lib": ["esnext"],
     "module": "commonjs",
     "target": "es5",
     "moduleResolution": "node",
@@ -9,14 +9,15 @@
     "outDir": "dist",
     "preserveSymlinks": true,
     "downlevelIteration": true,
-    "resolveJsonModule": true,
     "types" : ["node", "mocha"]
   },
   "include": [
     "index.ts",
-    "definitions/**/*.ts",
     "src/**/*.ts",
     "test/**/*.ts"  
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "log/**"
+  ]
 }

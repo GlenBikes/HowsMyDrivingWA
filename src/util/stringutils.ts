@@ -7,8 +7,7 @@ export const uuidv1 = uuid.v1;
  *
  * Returns:
  *  String GUID of form uuid/v1 (see uuid npm package)
-**/
+ **/
 export function GetHowsMyDrivingId(): string {
   return uuidv1();
 }
-

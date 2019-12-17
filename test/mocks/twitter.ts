@@ -1,3 +1,4 @@
+import * as Twit from 'twit';
 
 export interface ITwitterUser {
   id?: number;
@@ -17,12 +18,11 @@ export interface ITweet {
   tweet_user_screen_name?: string;
   full_text?: string;
   display_text_range?: Array<number>;
-  user?: ITwitterUser 
+  user?: ITwitterUser;
 }
 
 export function createTweet(options: ITweet): ITweet {
   let ret: ITweet = options;
-  
+
   return ret;
 }
-

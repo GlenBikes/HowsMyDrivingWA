@@ -1,17 +1,12 @@
-import {ICitation} from 'howsmydriving-utils';
-import {Citation} from 'howsmydriving-utils';
+import { ICitation } from 'howsmydriving-utils';
+import { Citation } from 'howsmydriving-utils';
 
-import {GetHowsMyDrivingId} from './util/stringutils';
+import { GetHowsMyDrivingId } from './util/stringutils';
 
-export {StatesAndProvinces, formatPlate} from './util/licensehelper';
+export { StatesAndProvinces, formatPlate } from './util/licensehelper';
 
-export {GetHowsMyDrivingId} from './util/stringutils';
-export {uuidv1} from './util/stringutils';
-
-// TODO: Move these to HowsMyDriving-Utils
-export {ITwitterUser} from '../test/mocks/twitter';
-export {ITweet} from '../test/mocks/twitter';
-export {createTweet} from '../test/mocks/twitter';
+export { GetHowsMyDrivingId } from './util/stringutils';
+export { uuidv1 } from './util/stringutils';
 
 export interface IRequestRecord {
   id: string;
@@ -55,10 +50,12 @@ export class ReportItemRecord implements IReportItemRecord {
     this.tweet_id = citation.tweet_id;
     this.tweet_id_str = citation.tweet_user_screen_name;
     this.tweet_user_screen_name = citation.tweet_user_screen_name;
-    this.processing_status = "UNPROCESSED";
+    this.processing_status = 'UNPROCESSED';
     this.created = now;
     this.modified = now;
-    this.ttl_expire = new Date(now).setFullYear(new Date(now).getFullYear() + 10);;
+    this.ttl_expire = new Date(now).setFullYear(
+      new Date(now).getFullYear() + 10
+    );
     this.tweet_text = message;
   }
 
@@ -79,7 +76,7 @@ export class ReportItemRecord implements IReportItemRecord {
 
 // TODO: Probalby shouldn't have this interface with all optional properties...
 export interface ICitationRecord extends ICitation {
-  citation_id: number,
+  citation_id: number;
   request_id?: string;
   processing_status?: string;
   created?: number;
@@ -92,25 +89,12 @@ export interface ICitationRecord extends ICitation {
   tweet_user_screen_name?: string;
 }
 
-export class CitationRecord extends Citation implements ICitationRecord {
+export class CitationRecord extends Citation {
   [name: string]: number | string;
   constructor(citation: Citation) {
-    super(citation.citation_id, citation.license);
-    
-    // If passed an existing instance, copy over the properties.
-    if(arguments.length > 0) {
-      for (var p in citation) {
-        if (citation.hasOwnProperty(p)) {
-          this[p] = citation[p];
-        }
-      }
-    }
+    super(citation);
   }
-  
-  id: string;
-  license: string;
-  region: string;
-  citation_id: number;
+
   request_id: string;
   processing_status: string;
   created: number;
