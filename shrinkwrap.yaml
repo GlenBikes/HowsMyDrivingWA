@@ -4,9 +4,9 @@ dependencies:
   chokidar: 3.3.1
   dynamo-batchwrite-queue: 1.0.1
   express: 4.17.1
-  howsmydriving-dummy: 0.1.21
-  howsmydriving-seattle: 0.1.23
-  howsmydriving-utils: 0.1.56
+  howsmydriving-dummy: 0.1.27
+  howsmydriving-seattle: 0.1.26
+  howsmydriving-utils: 0.1.57
   live-mutex: 0.2.21
   log4js: 4.5.1
   node-localstorage: 1.3.1
@@ -129,7 +129,7 @@ packages:
       integrity: sha512-5mHFNyavtLoJmnusB8OKJ5bshSzw+qkMIBAobLrIM48HJvunFva9mOa6aBwh64lBFyNwBbs0xiEFuj4eU/NjCA==
   /@types/fs-extra/4.0.9:
     dependencies:
-      '@types/node': 12.12.18
+      '@types/node': 12.12.20
     dev: false
     resolution:
       integrity: sha512-dC9Y/GTlzrFRxoX3YMztrjcVQ6B8UAvMbx8pAa2B3hINuhB0hv++ufZVauZpG1l9U0rJznB25IFPvf5XtMcIvw==
@@ -162,19 +162,23 @@ packages:
       integrity: sha512-NYrtPht0wGzhwe9+/idPaBB+TqkY9AhTvOLMkThm0IoEfLaiVQZwBwyJ5puCkO3AUCWrmcoePjp2mbFocKy4SQ==
   /@types/node-fetch/1.6.9:
     dependencies:
-      '@types/node': 12.12.18
+      '@types/node': 12.12.20
     dev: false
     resolution:
       integrity: sha512-n2r6WLoY7+uuPT7pnEtKJCmPUGyJ+cbyBR8Avnu4+m1nzz7DwBVuyIvvlBzCZ/nrpC7rIgb3D6pNavL7rFEa9g==
   /@types/node-sass/3.10.32:
     dependencies:
-      '@types/node': 12.12.18
+      '@types/node': 12.12.20
     dev: false
     resolution:
       integrity: sha1-spbM5xRP+rd7hAkMqtTx5Lvqjgk=
   /@types/node/12.12.18:
     resolution:
       integrity: sha512-DBkZuIMFuAfjJHiunyRc+aNvmXYNwV1IPMgGKGlwCp6zh6MKrVtmvjSWK/axWcD25KJffkXgkfvFra8ndenXAw==
+  /@types/node/12.12.20:
+    dev: false
+    resolution:
+      integrity: sha512-VAe+DiwpnC/g448uN+/3gRl4th0BTdrR9gSLIOHA+SUQskaYZQDOHG7xmjiE7JUhjbXnbXytf6Ih+/pA6CtMFQ==
   /@types/range-parser/1.2.3:
     resolution:
       integrity: sha512-ewFXqrQHlFsgc09MK5jP5iR7vumV/BYayNC6PgJO2LPe8vrnNFyjQjSppfEngITi0qvfKtzFvgKymGheFM9UOA==
@@ -1736,11 +1740,11 @@ packages:
   /hosted-git-info/2.8.5:
     resolution:
       integrity: sha512-kssjab8CvdXfcXMXVcvsXum4Hwdq9XGtRD3TteMEvEbq0LXyiNQr6AprqKqfeaDXze7SxWvRxdpwE6ku7ikLkg==
-  /howsmydriving-dummy/0.1.21:
+  /howsmydriving-dummy/0.1.27:
     dependencies:
       chokidar: 3.3.1
       express: 4.17.1
-      howsmydriving-utils: 0.1.56
+      howsmydriving-utils: 0.1.57
       log4js: 4.5.1
       node-localstorage: 1.3.1
       request: 2.88.0
@@ -1750,12 +1754,12 @@ packages:
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-gNmId0+Msvsa2RVd1wY5+L4HzLxAczNkIUr4/IrW/7XmRtknCzThopzPG4ZCcmK2h6dZCAqDodVxl97Xng29Yw==
-  /howsmydriving-seattle/0.1.23:
+      integrity: sha512-t1LnFiwiLGFu0kNOubtGXbcdCjWXHO3Cd99MeBPoT9LSYG+3BgN9SgCrW/80ZrfC24cJh9T7PCCFuKc1q/8qgA==
+  /howsmydriving-seattle/0.1.26:
     dependencies:
       chokidar: 3.3.1
       express: 4.17.1
-      howsmydriving-utils: 0.1.56
+      howsmydriving-utils: 0.1.57
       log4js: 4.5.1
       node-localstorage: 1.3.1
       request: 2.88.0
@@ -1766,8 +1770,8 @@ packages:
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-YqC55RwRONCdNXAmBd8NKXAs353Vg/9YZodq4v6ZG7xTgx/A2Gn97qTQ2ncv1Z+qFIQRp0AXmbik2iLVlSWhow==
-  /howsmydriving-utils/0.1.56:
+      integrity: sha512-h2V2yTCHCYqqYmmhbhrosMHZyBRzbXLbYon9uSfme/t2OKkuAGqZGhL3G4f0XwnnzR+jo3V5AvYlOEGQD/YTJA==
+  /howsmydriving-utils/0.1.57:
     dependencies:
       '@types/body-parser': 1.17.1
       '@types/es6-shim': 0.31.39
@@ -1793,7 +1797,7 @@ packages:
     engines:
       node: 11.15.0
     resolution:
-      integrity: sha512-vM5lWfPKIuBo3NlPPzgbx8svj19iUrciSGagmOl/Bru5CdA4RR0oEFWRYH1uCOjNg0ESL3l3U9jMw9JQV9G6ag==
+      integrity: sha512-wV2n6Equq1+4v0sP8fbOFdMoxmV2klaeMLGmRk8X2cy85Vwiqt/XVgyLr2EYdjbw+l2eteYdb3U3IdUJzK/3kw==
   /http-errors/1.7.2:
     dependencies:
       depd: 1.1.2
@@ -4219,9 +4223,9 @@ specifiers:
   del: ^5.1.0
   dynamo-batchwrite-queue: ^1.0.1
   express: ^4.14.0
-  howsmydriving-dummy: ^0.1.21
-  howsmydriving-seattle: ^0.1.23
-  howsmydriving-utils: ^0.1.56
+  howsmydriving-dummy: ^0.1.27
+  howsmydriving-seattle: ^0.1.26
+  howsmydriving-utils: ^0.1.57
   live-mutex: ^0.2.21
   log4js: ^4.0.2
   mocha: ^6.2.2

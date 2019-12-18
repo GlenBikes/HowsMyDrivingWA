@@ -34,15 +34,12 @@ const express = require('express'),
   soap = require('soap');
 
 let app_root_dir = require('app-root-dir').get();
-console.log(`app_root_dir: ${app_root_dir}.`)
 
 let pjson = require(path.join(app_root_dir, 'package.json'));
 
 export var __MODULE_NAME__: string = pjson.name;
 
 import { log, lastdmLog, lastmentionLog } from './logging';
-
-log.info(`app_root_dir: ${app_root_dir}`);
 
 const noCitationsFoundMessage = 'No citations found for plate #',
   noValidPlate =
@@ -163,17 +160,20 @@ log.info('Loading regions...');
 const regions: { [key: string]: IRegion } = {};
 let import_promises: Array<Promise<void>> = [];
 
+// TODO: This needs to be async
 process.env.REGIONS.split(',').forEach(region_package => {
   region_package = region_package.trim();
   log.info(`Loading package ${region_package}`);
   import_promises.push(
     new Promise<any>((resolve, reject) => {
       import(region_package)
-        .then(module => {
-          regions[module.Region.Name] = module.Region;
+        .then( (module) => {
+          log.debug(`Imported region module ${module.Region.name} ${region_package}.`);
+        
+          regions[module.Region.name] = module.Region;
           resolve(module);
         })
-        .catch(err => {
+        .catch( (err) => {
           handleError(err);
         });
     })
@@ -737,6 +737,8 @@ function processRequestRecords(): Promise<void> {
                   request_promises.push(Promise.resolve());
                 } else {
                   Object.keys(regions).forEach(region_name => {
+                    log.info(`Getting citations for request ${item.id} ${state}:${plate} in region ${region_name}...`);
+                    
                     request_promises.push(
                       new Promise<void>((resolve, reject) => {
                         regions[region_name]
