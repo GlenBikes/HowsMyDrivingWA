@@ -14,6 +14,8 @@ export let log = log4js.getLogger('result'),
   lastmentionLog = log4js.getLogger('_lastdm');
 
 log.addContext('module', __MODULE_NAME__);
+lastdmLog.addContext('module', __MODULE_NAME__);
+lastmentionLog.addContext('module', __MODULE_NAME__);
 
 /**
  * Monitor the log4js config file and reloading log instances if the file changes.
@@ -41,6 +43,10 @@ function reloadlog(reason: string) {
     log = log4js.getLogger('reason');
     lastdmLog = log4js.getLogger('_lastdm');
     lastmentionLog = log4js.getLogger('_lastdm');
+    
+    log.addContext('module', __MODULE_NAME__);
+    lastdmLog.addContext('module', __MODULE_NAME__);
+    lastmentionLog.addContext('module', __MODULE_NAME__);
   });
 }
 

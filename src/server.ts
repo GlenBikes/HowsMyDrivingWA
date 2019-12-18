@@ -25,20 +25,24 @@ import { StatesAndProvinces, formatPlate } from './interfaces';
 import { GetHowsMyDrivingId } from './interfaces';
 import { ReportItemRecord } from './interfaces';
 
-import * as HMDSEA from 'howsmydriving-seattle';
-
 // legacy commonjs modules
 const express = require('express'),
   fs = require('fs'),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require('path'),
   Q = require('dynamo-batchwrite-queue'),
-  soap = require('soap'),
-  pjson = require(path.resolve(__dirname + '/../../package.json'));
+  soap = require('soap');
+
+let app_root_dir = require('app-root-dir').get();
+console.log(`app_root_dir: ${app_root_dir}.`)
+
+let pjson = require(path.join(app_root_dir, 'package.json'));
 
 export var __MODULE_NAME__: string = pjson.name;
 
 import { log, lastdmLog, lastmentionLog } from './logging';
+
+log.info(`app_root_dir: ${app_root_dir}`);
 
 const noCitationsFoundMessage = 'No citations found for plate #',
   noValidPlate =
