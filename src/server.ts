@@ -3,7 +3,6 @@ import * as AWS from 'aws-sdk';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 import { Request, Response } from 'express';
 import * as http from 'http';
-import { LMXClient, LMXBroker, Client, Broker } from 'live-mutex';
 import * as Twit from 'twit';
 
 // howsmydriving-utils
@@ -15,6 +14,9 @@ import { ICitation } from 'howsmydriving-utils';
 import { CompareNumericStrings } from 'howsmydriving-utils';
 import { SplitLongLines } from 'howsmydriving-utils';
 import { PrintTweet } from 'howsmydriving-utils';
+import { GetMutexClient } from 'howsmydriving-utils';
+
+import { GetNewTweets, GetNewDMs, GetTweetById, SendTweets, ITweet, ITwitterUser } from 'howsmydriving-twitter';
 
 // interfaces internal to project
 import { IRequestRecord } from './interfaces';
@@ -35,6 +37,7 @@ const express = require('express'),
 
 let app_root_dir = require('app-root-dir').get();
 
+// TODO: Write a function to find the appropriate package.json
 let pjson = require(path.join(app_root_dir, 'package.json'));
 
 export var __MODULE_NAME__: string = pjson.name;
@@ -46,15 +49,7 @@ const noCitationsFoundMessage = 'No citations found for plate #',
     'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #',
   citationQueryText = 'License #__LICENSE__ has been queried __COUNT__ times.';
 
-const app = express(),
-  config: any = {
-    twitter: {
-      consumer_key: process.env.CONSUMER_KEY,
-      consumer_secret: process.env.CONSUMER_SECRET,
-      access_token: process.env.ACCESS_TOKEN,
-      access_token_secret: process.env.ACCESS_TOKEN_SECRET
-    }
-  };
+const app = express();
 
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
@@ -63,6 +58,8 @@ var localStorage = new LocalStorage('./.localstore');
 const MUTEX_TWIT_POST_MAX_HOLD_MS: number = 100000,
   MUTEX_TWIT_POST_MAX_RETRIES: number = 5,
   MUTEX_TWIT_POST_MAX_WAIT_MS: number = 300000;
+
+var mutex_client = GetMutexClient();
 
 // Don't think we need to override this. The only EventEmitters we
 // use are for mocha test execution, fs file watching.
@@ -92,10 +89,6 @@ const violationsByStatusText: string = 'Violations by status for #';
 const licenseQueriedCountText: string =
   'License __LICENSE__ has been queried __COUNT__ times.';
 const licenseRegExp: RegExp = /\b([a-zA-Z]{2}):([a-zA-Z0-9]+)\b/;
-const botScreenNameRegexp: RegExp = new RegExp(
-  '@' + process.env.TWITTER_HANDLE + '\\b',
-  'i'
-);
 
 const MUTEX_KEY: { [index: string]: string } = {
   tweet_processing: '__HOWSMYDRIVING_TWEET_PROCESSING__',
@@ -104,6 +97,8 @@ const MUTEX_KEY: { [index: string]: string } = {
   citation_processing: '__HOWSMYDRIVING_CITATION_PROCESSING__',
   report_item_processing: '__HOWSMYDRIVING_REPORT_ITEM_PROCESSING__'
 };
+
+log.info(`ENV_TEST: ${process.env.ENV_TEST}`);
 
 app.use(express.static('public'));
 
@@ -115,45 +110,26 @@ var listener = app.listen(process.env.PORT, function() {
   );
 });
 
-// One global broker for the live-mutex clients.
-let mutex_broker = new Broker({});
+process.on('exit', (code) => {
+  log.info(`Process exiting with exit code: ${code}.`);
+  listener.close();
+})
+.on('uncaughtException', (err) => {
+  log.error(
+    `Caught exception: ${err}\n`
+  );
 
-mutex_broker.emitter.on('warning', function() {
-  log.warn(...arguments);
-});
-
-mutex_broker.emitter.on('error', function() {
-  log.error(...arguments);
-});
-
-mutex_broker.ensure().then(() => {
-  log.debug(`Successfully created mutex broker.`);
-});
-
-log.debug(`Creating mutex client.`);
-var mutex_client: Client = new LMXClient();
-
-mutex_client.emitter.on('info', function() {
-  log.debug(...arguments);
-});
-
-mutex_client.emitter.on('warning', function() {
-  log.warn(...arguments);
-});
-
-mutex_client.emitter.on('error', function() {
-  log.error(...arguments);
-});
-
-mutex_client
-  .connect()
-  .then(client => {
-    log.info(`Successfully created mutex client.`);
-  })
-  .catch((err: Error) => {
-    log.info(`Failed to connect mutex client. Err: ${err}.`);
-    handleError(err);
+  listener.close( () => {
+    log.info("Server is closed.");
   });
+})
+.on('unhandledRejection', (reason, promise) => {
+  log.error(`Unhandled Rejection at: promise: ${DumpObject(promise)}, reason: ${reason}.`);
+
+  listener.close( () => {
+    log.info("Server is closed.");
+  });
+});
 
 // Initialize regions
 log.info('Loading regions...');
@@ -192,39 +168,52 @@ Promise.all(import_promises)
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
 /* uptimerobot.com is hitting this URL every 5 minutes. */
 app.all('/tweet', function(request: Request, response: Response) {
-  const T: Twit = new Twit(config.twitter);
   var docClient: any = new AWS.DynamoDB.DocumentClient();
 
-  // We need the bot's app id to detect tweets from the bot
-  getAccountID(T)
-    .then((app_id: number) => {
-      try {
-        var twitter_promises: Array<Promise<void>> = [];
-        let tweet_process_promise: Promise<void> = processNewTweets(
-          T,
-          docClient,
-          app_id
-        );
-        var dm_process_promise = processNewDMs();
+  /* First, let's load the ID of the last tweet we responded to. */
+  var maxTweetIdRead: string;
+  var maxDmIdRead: string;
+  var last_mention_id = (maxTweetIdRead = getLastMentionId());
+  var last_dm_id = (maxDmIdRead = getLastDmId());
 
-        twitter_promises.push(tweet_process_promise);
-        twitter_promises.push(dm_process_promise);
+  if (!last_mention_id) {
+    handleError(new Error('ERROR: No last tweet found!'));
+  }
 
-        // Now wait until processing of both tweets and dms is done.
-        Promise.all(twitter_promises)
-          .then(() => {
-            response.sendStatus(200);
-          })
-          .catch(err => {
-            response.status(500).send(err);
-          });
-      } catch (err) {
-        response.status(500).send(err);
-      }
-    })
-    .catch((err: Error) => {
-      handleError(err);
-    });
+  if (!last_dm_id) {
+    handleError(new Error('ERROR: No last dm found!'));
+  }
+
+  var tweet_promises = [];
+
+  try {
+    var twitter_promises: Array<Promise<Array<ITweet>>> = [];
+    let get_tweets_promise: Promise<Array<ITweet>> = GetNewTweets(
+      last_mention_id
+    );
+    
+    var dm_process_promise = GetNewDMs(last_dm_id);
+
+    twitter_promises.push(get_tweets_promise);
+    twitter_promises.push(dm_process_promise);
+
+    // Now wait until processing of both tweets and dms is done.
+    get_tweets_promise
+      .then( (tweets) => {
+        processTweets(tweets, docClient).then( (requests_written) => {
+          response.sendStatus(200);
+        }).catch( (err) => {
+          handleError(err);
+        });
+      })
+      .catch( (err) => {
+        handleError(err);
+      });
+    
+    // TODO do the same for DM promise
+  } catch (err) {
+    response.status(500).send(err);
+  }
 });
 
 app.all(['/test', '/tests', '/runtest', '/runtests'], function(
@@ -300,8 +289,7 @@ app.all('/dumpfile', (request: Request, response: Response) => {
 app.all('/dumptweet', (request: Request, response: Response) => {
   try {
     if (request.query.hasOwnProperty('id')) {
-      const T = new Twit(config.twitter);
-      var tweet = getTweetById(T, request.query.id);
+      var tweet = GetTweetById(request.query.id);
       response.set('Cache-Control', 'no-store');
       response.json(tweet);
     } else {
@@ -399,233 +387,80 @@ app.all('/processreportitems', (request: Request, response: Response) => {
   }
 });
 
-export function processNewTweets(
-  T: Twit,
-  docClient: AWS.DynamoDB.DocumentClient,
-  bot_app_id: number
-): Promise<void> {
-  let maxTweetIdRead: string = '-1';
+export function processTweets(
+  tweets: Array<ITweet>,
+  docClient: AWS.DynamoDB.DocumentClient
+): Promise<number> {
 
-  // Collect promises from these operations so they can go in parallel
-  var twitter_promises: Array<Promise<void>> = [];
+return new Promise<number>( (resolve, reject) => {
+    /* First, let's load the ID of the last tweet we responded to. */
+    var maxTweetIdRead;
+    var last_mention_id = maxTweetIdRead = getLastMentionId();
 
-  /* First, let's load the ID of the last tweet we responded to. */
-  var last_mention_id = (maxTweetIdRead = getLastMentionId());
+    var batch_write_promise: Promise<void>;
+    var request_records: Array<any> = [];
 
-  var tweet_promises = [];
-  if (!last_mention_id) {
-    handleError(new Error('ERROR: No last tweet found!'));
-  }
+    if (tweets.length > 0) {
+      tweets.forEach( (tweet: ITweet) => {
+        if (CompareNumericStrings(maxTweetIdRead, tweet.id_str) < 0) {
+          maxTweetIdRead = tweet.id_str;
+        }
 
-  var mentions_promise = new Promise<void>((resolve, reject) => {
-    // Make sure we are the only process doing this or else we'll get dupes.
-    let acquired_mutex = {
-      key: '',
-      id: ''
-    };
-    mutex_client
-      .acquireLock(MUTEX_KEY['request_processing'], {
-        ttl: MUTEX_TWIT_POST_MAX_HOLD_MS,
-        maxRetries: MUTEX_TWIT_POST_MAX_RETRIES,
-        lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-      })
-      .then(v => {
-        log.debug(`Acquired mutex ${v.id} and received key ${v.key}.`);
-        acquired_mutex.key = v.key;
-        acquired_mutex.id = v.id;
+        const { state, plate } = parseTweet(tweet.full_text);
+        var now = Date.now();
 
-        log.debug(`Checking for tweets greater than ${last_mention_id}.`);
-        /* Next, let's search for Tweets that mention our bot, starting after the last mention we responded to. */
-        T.get(
-          'search/tweets',
-          {
-            q: '%40' + process.env.TWITTER_HANDLE,
-            since_id: last_mention_id,
-            tweet_mode: 'extended'
-          },
-          function(
-            err: Error,
-            data: Twit.Twitter.SearchResults,
-            response: http.IncomingMessage
-          ) {
-            if (err) {
-              handleError(err);
+        log.info(`Found ${PrintTweet(tweet)}`);
+
+        var item = {
+          PutRequest: {
+            Item: {
+              id: GetHowsMyDrivingId(),
+              license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
+              created: now,
+              modified: now,
+              processing_status: 'UNPROCESSED',
+              tweet_id: tweet.id,
+              tweet_id_str: tweet.id_str,
+              tweet_user_id: tweet.user.id,
+              tweet_user_id_str: tweet.user.id_str,
+              tweet_user_screen_name: tweet.user.screen_name
             }
-
-            let num_tweets: number = data.statuses.length;
-            let num_request_records: number = 0;
-            if (data.statuses.length) {
-              /* 
-            Iterate over each tweet. 
-
-            The replies can occur concurrently, but the threaded replies to each tweet must, 
-            within that thread, execute sequentially. 
-
-            Since each tweet with a mention is processed in parallel, keep track of largest ID
-            and write that at the end.
-            */
-              data.statuses.forEach((status: Twit.Twitter.Status) => {
-                var request_records: Array<any> = [];
-
-                if (CompareNumericStrings(maxTweetIdRead, status.id_str) < 0) {
-                  maxTweetIdRead = status.id_str;
-                }
-
-                /*
-              Make sure this isn't a reply to one of the bot's tweets which would
-              include the bot screen name in full_text, but only due to replies.
-              */
-                const { chomped, chomped_text } = chompTweet(status);
-
-                if (!chomped || botScreenNameRegexp.test(chomped_text)) {
-                  /* Don't reply to retweet or our own tweets. */
-                  if (status.hasOwnProperty('retweet_status')) {
-                    log.info(`Ignoring retweet: ${status.full_text}`);
-                  } else if (status.user.id == bot_app_id) {
-                    log.info('Ignoring our own tweet: ' + status.full_text);
-                  } else {
-                    const { state, plate } = parseTweet(chomped_text);
-                    const noPlate: boolean =
-                      !state || !plate || state === '' || plate === '';
-                    var now = Date.now();
-
-                    log.info(`Found ${PrintTweet(status)}`);
-
-                    var item = {
-                      PutRequest: {
-                        Item: {
-                          id: GetHowsMyDrivingId(),
-                          license: `${state}:${plate}`, // TODO: Create a function for this plate formatting.
-                          created: now,
-                          modified: now,
-                          processing_status: 'UNPROCESSED',
-                          tweet_id: status.id,
-                          tweet_id_str: status.id_str,
-                          tweet_user_id: status.user.id,
-                          tweet_user_id_str: status.user.id_str,
-                          tweet_user_screen_name: status.user.screen_name
-                        }
-                      }
-                    };
-
-                    request_records.push(item);
-                  }
-                } else {
-                  log.info(
-                    "Ignoring reply that didn't actually reference bot: " +
-                      status.full_text
-                  );
-                }
-
-                if (request_records.length > 0) {
-                  num_request_records += request_records.length;
-                  twitter_promises.push(
-                    batchWriteWithExponentialBackoff(
-                      docClient,
-                      tableNames['Request'],
-                      request_records
-                    )
-                  );
-                }
-              });
-            } else {
-              /* No new mentions since the last time we checked. */
-              log.info('No new mentions...');
-            }
-
-            Promise.all(twitter_promises)
-              .then(() => {
-                if (num_tweets > 0) {
-                  log.info(
-                    `Wrote ${num_request_records} request records for ${num_tweets} tweets.`
-                  );
-                }
-
-                // Update the ids of the last tweet/dm if we processed
-                // anything with larger ids.
-                if (
-                  CompareNumericStrings(maxTweetIdRead, last_mention_id) > 0
-                ) {
-                  setLastMentionId(maxTweetIdRead);
-                }
-
-                resolve();
-              })
-              .catch((err: Error) => {
-                handleError(err);
-              });
           }
-        );
-      })
-      .catch((err: Error) => {
+        };
+
+        request_records.push(item);
+      });
+    }
+
+    if (request_records.length > 0) {
+      batch_write_promise = batchWriteWithExponentialBackoff(
+        docClient,
+        tableNames['Request'],
+        request_records
+      )
+    }
+
+    // Update the ids of the last tweet/dm if we processed
+    // anything with larger ids.
+    if (
+      CompareNumericStrings(maxTweetIdRead, last_mention_id) > 0
+    ) {
+      setLastMentionId(maxTweetIdRead);
+    }
+
+    if (batch_write_promise) {
+      batch_write_promise.then( () => {
+        log.info(`Wrote ${request_records.length} request records.`)
+        resolve(request_records.length);
+      }).
+      catch( (err) => {
         handleError(err);
       })
-      .finally(() => {
-        log.debug(
-          `Releasing mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-        mutex_client.releaseLock(acquired_mutex.key, {
-          id: acquired_mutex.id,
-          force: true
-        });
-        log.debug(
-          `Released mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-      });
+    }
+    else {
+      resolve(0);
+    }
   });
-
-  return mentions_promise;
-}
-
-function processNewDMs() {
-  var maxDmIdRead = -1;
-
-  /* Respond to DMs */
-  /* Load the ID of the last DM we responded to. */
-  var last_dm_id = (maxDmIdRead = getLastDmId());
-
-  if (!last_dm_id) {
-    handleError(new Error('ERROR: No last dm found! Defaulting to zero.'));
-  }
-
-  var dm_promise = Promise.resolve();
-  // Make sure we are the only process doing this or else we'll get dupes.
-  let acquired_mutex = {
-    key: '',
-    id: ''
-  };
-  mutex_client
-    .acquireLock(MUTEX_KEY['dm_processing'], {
-      ttl: MUTEX_TWIT_POST_MAX_HOLD_MS,
-      maxRetries: MUTEX_TWIT_POST_MAX_RETRIES,
-      lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-    })
-    .then(v => {
-      log.debug(`Acquired mutex ${v.id} and received key ${v.key}.`);
-      acquired_mutex.key = v.key;
-      acquired_mutex.id = v.id;
-
-      /**
-       *  TODO: Implement DM handling.
-       **/
-    })
-    .catch((err: Error) => {
-      handleError(err);
-    })
-    .finally(() => {
-      log.debug(
-        `Releasing mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-      );
-      mutex_client.releaseLock(acquired_mutex.key, {
-        id: acquired_mutex.id,
-        force: true
-      });
-      log.debug(
-        `Released mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-      );
-    });
-
-  return dm_promise;
 }
 
 function processRequestRecords(): Promise<void> {
@@ -1230,7 +1065,6 @@ function processReportItemRecords(): Promise<void> {
         acquired_mutex.key = v.key;
         acquired_mutex.id = v.id;
 
-        var T = new Twit(config.twitter);
         var docClient = new AWS.DynamoDB.DocumentClient();
         var request_promises: Array<Promise<void>> = [];
 
@@ -1245,6 +1079,11 @@ function processReportItemRecords(): Promise<void> {
               log.info(
                 `Processing ${report_items.length} report items for all regions...`
               );
+              var reportItemsByRequest: {
+                [request_id: string]: {
+                  [region_name: string]: Array<IReportItemRecord>;
+                };
+              } = {};
               var reportItemsByRequest: {
                 [request_id: string]: {
                   [region_name: string]: Array<IReportItemRecord>;
@@ -1318,10 +1157,9 @@ function processReportItemRecords(): Promise<void> {
                             `Posting ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} in ${region_name} region.`
                           );
 
-                          SendResponses(
-                            T,
+                          SendTweets(
                             origTweet,
-                            reportItemsByRequest[request_id][region_name]
+                            reportItemsByRequest[request_id][region_name].map(({ tweet_text }) => tweet_text)
                           )
                             .then(tweets_sent_count => {
                               log.info(
@@ -1517,7 +1355,7 @@ function GetReportItemForPseudoCitation(
   }
 }
 
-export function chompTweet(tweet: Twit.Twitter.Status) {
+export function chompTweet(tweet: ITweet) {
   // Extended tweet objects include the screen name of the tweeting user within the full_text,
   // as well as all replied-to screen names in the case of a reply.
   // Strip off those because if UserA tweets a license plate and references the bot and then
@@ -1623,127 +1461,7 @@ function GetQueryCount(
   );
 }
 
-function SendResponses(
-  T: Twit,
-  origTweet: Twit.Twitter.Status,
-  report_items: Array<IReportItemRecord>
-): Promise<number> {
-  if (report_items.length == 0) {
-    // return an promise that is already resolved, ending the recursive
-    // chain of promises that have been built.
-    return Promise.resolve(0);
-  }
-
-  // Clone the report_items array so we don't modify the one passed to us
-  var report_items_clone: Array<IReportItemRecord> = [...report_items];
-  var report_item: IReportItemRecord = report_items_clone.shift();
-  var replyToScreenName: string = origTweet.user.screen_name;
-  var replyToTweetId: string = origTweet.id_str;
-
-  /* Now we can respond to each tweet. */
-  // When doing the initial reply to the user's tweet, we need to include their
-  // twitter account in the text of the tweet (i.e. @replyToScreenName).
-  // But when replying to our own replies, we should not include our own mention
-  // or else those tweets will show up in the timelines of everyone who
-  // follows the bot.
-  var tweetText = '';
-
-  if (
-    !(
-      replyToScreenName.toUpperCase() ===
-      process.env.TWITTER_HANDLE.toUpperCase()
-    )
-  ) {
-    tweetText += '@' + replyToScreenName + ' ';
-  }
-
-  tweetText += report_item.tweet_text;
-  log.debug(
-    `Sending Tweet for request ${report_item.request_id} ${report_item.license} in ${report_item.region} region: ${tweetText}.`
-  );
-  return new Promise<number>((resolve, reject) => {
-    let tweets_sent: number = 0;
-
-    // There will be one thread running this for each request we are
-    // processing. We need to make sure we don't send tweets in quick
-    // succession or Twitter will tag them as spam and they won't
-    // render i the thread of resposes.
-    // So wait at least INTER_TWEET_DELAY_MS ms between posts.
-    T.post(
-      'statuses/update',
-      {
-        status: tweetText,
-        in_reply_to_status_id: replyToTweetId
-        /*,
-        auto_populate_reply_metadata: true*/
-      } as Twit.Params,
-      (
-        err: Error,
-        data: Twit.Twitter.Status,
-        response: http.IncomingMessage
-      ) => {
-        let twit_error_code: number = 0;
-
-        if (err && err.hasOwnProperty('code')) {
-          twit_error_code = (err as any)['code'];
-        }
-
-        if (err && twit_error_code != 187) {
-          handleError(err);
-        } else {
-          if (err && twit_error_code == 187) {
-            // This appears to be a "status is a duplicate" error which
-            // means we are trying to resend a tweet we already sent.
-            // Pretend we succeeded.
-            log.info(
-              `Received error 187 sending tweet for request ${report_item.request_id} ${report_item.license} in ${report_item.region} region: ${report_item.tweet_text}.`
-            );
-
-            // Keep replying to the tweet we were told to reply to.
-            // This means that in this scenario, if any of the rest of the tweets in this
-            // thread have not been sent, they will create a new thread off the parent of
-            // this one.
-            // Not ideal, but the other alternatives are:
-            // 1) Query for the previous duplicate tweet and then pass that along
-            // 2) set all of the replies for this request to be PROCESSED even if they did not
-            //    all get tweeted.
-            data = origTweet;
-          } else {
-            tweets_sent++;
-            log.info(
-              `Sent tweet for request ${report_item.request_id} ${
-                report_item.license
-              } in ${report_item.region} region: ${PrintTweet(data)}`
-            );
-          }
-
-          // Wait a bit. It seems tweeting a whackload of tweets in quick succession
-          // can cause Twitter to think you're a troll bot or something and then some
-          // of the tweets will not display for users other than the bot account.
-          // See: https://twittercommunity.com/t/inconsistent-display-of-replies/117318/11
-          sleep(report_items_clone.length > 0 ? INTER_TWEET_DELAY_MS : 0)
-            .then(() => {
-              // Send the rest of the responses. When those are sent, then resolve
-              // the local Promise.
-              SendResponses(T, data, report_items_clone)
-                .then(tweets_sent_rest => {
-                  tweets_sent += tweets_sent_rest;
-                  resolve(tweets_sent);
-                })
-                .catch((err: Error) => {
-                  handleError(err);
-                });
-            })
-            .catch((err: Error) => {
-              handleError(err);
-            });
-        }
-      }
-    );
-  });
-}
-
-function getLastDmId() {
+function getLastDmId(): string {
   var lastdm = localStorage.getItem('lastdm');
 
   // TODO: Should we rather just add some code to go query what the most
@@ -1767,10 +1485,10 @@ function getLastDmId() {
     }
   }
 
-  return lastdm ? parseInt(lastdm, 10) : 0;
+  return lastdm ? lastdm : '0';
 }
 
-function getLastMentionId() {
+function getLastMentionId(): string {
   var lastmention = localStorage.getItem('lastmention');
 
   if (!lastmention) {
@@ -1853,15 +1571,6 @@ function getTweetById(T: Twit, id: string) {
       handleError(err);
     });
 }
-
-// Fake a sleep function. Call this thusly:
-// sleep(500).then(() => {
-//   do stuff
-// })
-// Or similar pattrs that use a Promise
-const sleep = (milliseconds: number) => {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
-};
 
 // asynchronous query function to fetch all unprocessed request records.
 // returns: promise

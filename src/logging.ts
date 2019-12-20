@@ -2,9 +2,9 @@ import { __MODULE_NAME__ } from './server';
 
 const chokidar = require('chokidar'),
   log4js = require('log4js'),
-  path = require('path');
+  path = require('path'),
+  config_path = path.resolve(__dirname + '/../config/log4js.json');
 
-const config_path = path.resolve(__dirname + '/../config/log4js.json');
 
 // Load the config.
 log4js.configure(config_path);
