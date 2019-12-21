@@ -1,6 +1,5 @@
 /* Setting things up. */
 import * as AWS from 'aws-sdk';
-import {Client} from 'live-mutex';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 import { Request, Response } from 'express';
 import * as http from 'http';
@@ -15,7 +14,6 @@ import { ICitation } from 'howsmydriving-utils';
 import { CompareNumericStrings } from 'howsmydriving-utils';
 import { SplitLongLines } from 'howsmydriving-utils';
 import { PrintTweet } from 'howsmydriving-utils';
-import { GetMutexClient } from 'howsmydriving-utils';
 
 import { GetNewTweets, GetNewDMs, GetTweetById, SendTweets, ITweet, ITwitterUser } from 'howsmydriving-twitter';
 
@@ -28,6 +26,8 @@ import { StatesAndProvinces, formatPlate } from './interfaces';
 import { GetHowsMyDrivingId } from './interfaces';
 import { ReportItemRecord } from './interfaces';
 
+var MutexPromise = require('mutex-promise');
+ 
 // legacy commonjs modules
 const express = require('express'),
   fs = require('fs'),
@@ -54,18 +54,6 @@ const app = express();
 
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
-
-// Mutex to ensure we don't post tweets in quick succession
-const MUTEX_TWIT_POST_MAX_HOLD_MS: number = 100000,
-  MUTEX_TWIT_POST_MAX_RETRIES: number = 5,
-  MUTEX_TWIT_POST_MAX_WAIT_MS: number = 300000;
-
-var mutex_client: Client;
-
-// TODO: Make sure this is done before anything tries to use it.
-GetMutexClient().then( (client) => {
-  mutex_client = client;
-});
 
 // Don't think we need to override this. The only EventEmitters we
 // use are for mocha test execution, fs file watching.
@@ -104,6 +92,12 @@ const MUTEX_KEY: { [index: string]: string } = {
   citation_processing: '__HOWSMYDRIVING_CITATION_PROCESSING__',
   report_item_processing: '__HOWSMYDRIVING_REPORT_ITEM_PROCESSING__'
 };
+
+var tweet_processing_mutex = new MutexPromise(MUTEX_KEY['tweet_processing']);
+var dm_processing_mutex = new MutexPromise(MUTEX_KEY['dm_processing']);
+var request_processing_mutex = new MutexPromise(MUTEX_KEY['request_processing']);
+var citation_processing_mutex = new MutexPromise(MUTEX_KEY['citation_processing']);
+var report_item_processing_mutex = new MutexPromise(MUTEX_KEY['report_item_processing']);
 
 log.info(`ENV_TEST: ${process.env.ENV_TEST}`);
 
@@ -195,6 +189,11 @@ app.all('/tweet', function(request: Request, response: Response) {
 
   try {
     var twitter_promises: Array<Promise<Array<ITweet>>> = [];
+
+    log.debug(`Locking tweet_processing_mutex...`);
+    tweet_processing_mutex.lock();
+    log.debug(`Unocking tweet_processing_mutex.`);
+
     let get_tweets_promise: Promise<Array<ITweet>> = GetNewTweets(
       last_mention_id
     );
@@ -202,6 +201,7 @@ app.all('/tweet', function(request: Request, response: Response) {
     var dm_process_promise = GetNewDMs(last_dm_id);
 
     twitter_promises.push(get_tweets_promise);
+    // TODO: Move DM's out, wrapped w their own mutex
     twitter_promises.push(dm_process_promise);
 
     // Now wait until processing of both tweets and dms is done.
@@ -220,6 +220,11 @@ app.all('/tweet', function(request: Request, response: Response) {
     // TODO do the same for DM promise
   } catch (err) {
     response.status(500).send(err);
+  }
+  finally {
+    log.debug(`Unocking tweet_processing_mutex...`);
+    tweet_processing_mutex.unlock();
+    log.debug(`Unocked tweet_processing_mutex.`);
   }
 });
 
@@ -360,6 +365,10 @@ app.all(
 // uptimerobot.com hits this every 5 minutes
 app.all('/processrequests', (request: Request, response: Response) => {
   try {
+    log.debug(`Locking request_processing_mutex...`);
+    request_processing_mutex.lock();
+    log.debug(`Locked request_processing_mutex.`);
+
     let request_promise = processRequestRecords();
 
     request_promise
@@ -372,25 +381,46 @@ app.all('/processrequests', (request: Request, response: Response) => {
   } catch (err) {
     response.status(500).send(err);
   }
+  finally {
+    log.debug(`Unlocking request_processing_mutex...`);
+    request_processing_mutex.unlock();
+    log.debug(`Unlocked request_processing_mutex.`);
+  }
 });
 
 app.all('/processcitations', (request: Request, response: Response) => {
   try {
+    log.debug(`Locking citation_processing_mutex...`);
+    citation_processing_mutex.lock();
+    log.debug(`Locked citation_processing_mutex.`);
+
     let citation_promise = processCitationRecords();
 
     response.sendStatus(200);
   } catch (err) {
     response.status(500).send(err);
+  } finally {
+    log.debug(`Unlocking citation_processing_mutex...`);
+    citation_processing_mutex.unlock();
+    log.debug(`Unlocked citation_processing_mutex.`);
   }
 });
 
 app.all('/processreportitems', (request: Request, response: Response) => {
   try {
+    log.debug(`Locking report_item_processing_mutex...`);
+    report_item_processing_mutex.lock();
+    log.debug(`Locked report_item_processing_mutex.`);
+
     let citation_promise = processReportItemRecords();
 
     response.sendStatus(200);
   } catch (err) {
     response.status(500).send(err);
+  } finally {
+    log.debug(`Unlocking report_item_processing_mutex...`);
+    report_item_processing_mutex.unlock();
+    log.debug(`Unlocked report_item_processing_mutex.`);
   }
 });
 
@@ -472,22 +502,6 @@ return new Promise<number>( (resolve, reject) => {
 
 function processRequestRecords(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    let acquired_mutex = {
-      key: '',
-      id: ''
-    };
-
-    mutex_client
-      .acquireLock(MUTEX_KEY['request_processing'], {
-        ttl: MUTEX_TWIT_POST_MAX_HOLD_MS,
-        maxRetries: MUTEX_TWIT_POST_MAX_RETRIES,
-        lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-      })
-      .then(v => {
-        log.debug(`Acquired mutex ${v.id} and received key ${v.key}.`);
-        acquired_mutex.key = v.key;
-        acquired_mutex.id = v.id;
-
         var docClient = new AWS.DynamoDB.DocumentClient();
 
         log.debug(`Checking for request records for all regions...`);
@@ -770,22 +784,6 @@ function processRequestRecords(): Promise<void> {
           .catch((err: Error) => {
             handleError(err);
           });
-      })
-      .catch((err: Error) => {
-        handleError(err);
-      })
-      .finally(() => {
-        log.debug(
-          `Releasing mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-        mutex_client.releaseLock(acquired_mutex.key, {
-          id: acquired_mutex.id,
-          force: true
-        });
-        log.debug(
-          `Released mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-      });
 
     resolve();
   });
@@ -793,21 +791,6 @@ function processRequestRecords(): Promise<void> {
 
 function processCitationRecords(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    let acquired_mutex = {
-      key: '',
-      id: ''
-    };
-    mutex_client
-      .acquireLock(MUTEX_KEY['citation_processing'], {
-        ttl: MUTEX_TWIT_POST_MAX_HOLD_MS,
-        maxRetries: MUTEX_TWIT_POST_MAX_RETRIES,
-        lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-      })
-      .then(v => {
-        log.debug(`Acquired mutex ${v.id} and received key ${v.key}.`);
-        acquired_mutex.key = v.key;
-        acquired_mutex.id = v.id;
-
         var docClient = new AWS.DynamoDB.DocumentClient();
 
         log.debug('Querying citation records for all regions...');
@@ -1036,42 +1019,11 @@ function processCitationRecords(): Promise<void> {
           .catch((err: Error) => {
             handleError(err);
           });
-      })
-      .catch((err: Error) => {
-        handleError(err);
-      })
-      .finally(() => {
-        log.debug(
-          `Releasing mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-        mutex_client.releaseLock(acquired_mutex.key, {
-          id: acquired_mutex.id,
-          force: true
-        });
-        log.debug(
-          `Released mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-      });
   });
 }
 
 function processReportItemRecords(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    let acquired_mutex = {
-      key: '',
-      id: ''
-    };
-    mutex_client
-      .acquireLock(MUTEX_KEY['report_item_processing'], {
-        ttl: MUTEX_TWIT_POST_MAX_HOLD_MS,
-        maxRetries: MUTEX_TWIT_POST_MAX_RETRIES,
-        lockRequestTimeout: MUTEX_TWIT_POST_MAX_WAIT_MS
-      })
-      .then(v => {
-        log.debug(`Acquired mutex ${v.id} and received key ${v.key}.`);
-        acquired_mutex.key = v.key;
-        acquired_mutex.id = v.id;
-
         var docClient = new AWS.DynamoDB.DocumentClient();
         var request_promises: Array<Promise<void>> = [];
 
@@ -1274,24 +1226,10 @@ function processReportItemRecords(): Promise<void> {
               .catch((err: Error) => {
                 handleError(err);
               });
-          }
-        );
       })
       .catch((err: Error) => {
         handleError(err);
       })
-      .finally(() => {
-        log.debug(
-          `Releasing mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-        mutex_client.releaseLock(acquired_mutex.key, {
-          id: acquired_mutex.id,
-          force: true
-        });
-        log.debug(
-          `Released mutex key=${acquired_mutex.key}, id:${acquired_mutex.id}...`
-        );
-      });
   });
 }
 
