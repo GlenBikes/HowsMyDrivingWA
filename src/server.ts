@@ -99,8 +99,6 @@ var request_processing_mutex = new MutexPromise(MUTEX_KEY['request_processing'])
 var citation_processing_mutex = new MutexPromise(MUTEX_KEY['citation_processing']);
 var report_item_processing_mutex = new MutexPromise(MUTEX_KEY['report_item_processing']);
 
-log.info(`ENV_TEST: ${process.env.ENV_TEST}`);
-
 app.use(express.static('public'));
 
 var listener = app.listen(process.env.PORT, function() {
@@ -119,17 +117,9 @@ process.on('exit', (code) => {
   log.error(
     `Caught exception: ${err}\n`
   );
-
-  listener.close( () => {
-    log.info("Server is closed.");
-  });
 })
 .on('unhandledRejection', (reason, promise) => {
   log.error(`Unhandled Rejection at: promise: ${DumpObject(promise)}, reason: ${reason}.`);
-
-  listener.close( () => {
-    log.info("Server is closed.");
-  });
 });
 
 // Initialize regions
@@ -867,9 +857,10 @@ function processCitationRecords(): Promise<void> {
                   });
 
                   // Now process the citations, on a per-request basis
-                  Object.keys(citationsByRequest).forEach(request_id => {
+                  Object.keys(citationsByRequest).forEach( (request_id) => {
                     Object.keys(citationsByRequest[request_id]).forEach(
-                      region_name => {
+                      (region_name) => {
+                        log.debug(`Processing citations for request ${request_id} region ${region_name}.`);
                         // Get the first citation to access citation columns
                         let citation: ICitationRecord =
                           citationsByRequest[request_id][region_name][0];
@@ -899,6 +890,7 @@ function processCitationRecords(): Promise<void> {
                           log.debug(
                             `Processing citations for request ${request_id} ${licenseByRequest[request_id]} in ${region_name} region.`
                           );
+                          log.debug(`regions[region_name] for region_name ${region_name}: ${DumpObject(regions[region_name])}.`);
                           let messages = regions[
                             region_name
                           ].ProcessCitationsForRequest(
@@ -1011,7 +1003,9 @@ function processCitationRecords(): Promise<void> {
                       handleError(e);
                     });
                 }
-              );
+              ).catch( (err) => {
+                handleError(err);
+              });
             } else {
               log.info('No citations found.');
             }
