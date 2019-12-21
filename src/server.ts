@@ -1,5 +1,6 @@
 /* Setting things up. */
 import * as AWS from 'aws-sdk';
+import {Client} from 'live-mutex';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 import { Request, Response } from 'express';
 import * as http from 'http';
@@ -59,7 +60,12 @@ const MUTEX_TWIT_POST_MAX_HOLD_MS: number = 100000,
   MUTEX_TWIT_POST_MAX_RETRIES: number = 5,
   MUTEX_TWIT_POST_MAX_WAIT_MS: number = 300000;
 
-var mutex_client = GetMutexClient();
+var mutex_client: Client;
+
+// TODO: Make sure this is done before anything tries to use it.
+GetMutexClient().then( (client) => {
+  mutex_client = client;
+});
 
 // Don't think we need to override this. The only EventEmitters we
 // use are for mocha test execution, fs file watching.
@@ -78,7 +84,8 @@ export const tableNames: { [tabletype: string]: string } = {
   ReportItems: `${process.env.DB_PREFIX}_ReportItems`
 };
 
-AWS.config.update({ region: 'us-east-2' });
+AWS.config.update({ region: 'us-east-2' 
+                  });
 
 const maxTweetLength: number = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
 const noCitations: string = 'No citations found for plate # ';
@@ -144,7 +151,7 @@ process.env.REGIONS.split(',').forEach(region_package => {
     new Promise<any>((resolve, reject) => {
       import(region_package)
         .then( (module) => {
-          log.debug(`Imported region module ${module.Region.name} ${region_package}.`);
+          log.debug(`Imported region module ${module.Region.name} from module ${region_package}.`);
         
           regions[module.Region.name] = module.Region;
           resolve(module);
