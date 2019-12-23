@@ -41,7 +41,7 @@
     "result-filter": {
       "type": "logLevelFilter",
       "appender": "result",
-      "level": "info",
+      "level": "debug",
       "maxLevel": "fatal"
     },
     "error": {
@@ -84,6 +84,6 @@
     },
     "error": { "appenders": ["error", "error-filter"], "level": "error" },
     "warn": { "appenders": ["warn", "warn-filter"], "level": "warn" },
-    "test": { "appenders": ["test", "stdout"], "level": "INFO" }
+    "test": { "appenders": ["test", "stdout"], "level": "info" }
   }
 }

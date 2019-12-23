@@ -12,12 +12,12 @@
     "types" : ["node", "mocha"]
   },
   "include": [
-    "index.ts",
     "src/**/*.ts",
     "test/**/*.ts"  
   ],
   "exclude": [
-    "node_modules",
-    "log/**"
+    "log/**",
+    "^dist/**/*",
+    "^definitions/**/*"
   ]
 }

@@ -1,5 +1,3 @@
-import * as Twit from 'twit';
-
 export interface ITwitterUser {
   id?: number;
   id_str?: string;

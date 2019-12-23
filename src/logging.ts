@@ -1,10 +1,11 @@
+let app_root_dir = require('app-root-dir').get();
+
 import { __MODULE_NAME__ } from './server';
 
 const chokidar = require('chokidar'),
   log4js = require('log4js'),
   path = require('path'),
-  config_path = path.resolve(__dirname + '/../config/log4js.json');
-
+  config_path = path.resolve(app_root_dir + '/dist/config/log4js.json');
 
 // Load the config.
 log4js.configure(config_path);
@@ -16,6 +17,8 @@ export let log = log4js.getLogger('result'),
 log.addContext('module', __MODULE_NAME__);
 lastdmLog.addContext('module', __MODULE_NAME__);
 lastmentionLog.addContext('module', __MODULE_NAME__);
+log.info(`app_root_dir: ${app_root_dir}.`);
+
 
 /**
  * Monitor the log4js config file and reloading log instances if the file changes.
@@ -43,7 +46,7 @@ function reloadlog(reason: string) {
     log = log4js.getLogger('reason');
     lastdmLog = log4js.getLogger('_lastdm');
     lastmentionLog = log4js.getLogger('_lastdm');
-    
+
     log.addContext('module', __MODULE_NAME__);
     lastdmLog.addContext('module', __MODULE_NAME__);
     lastmentionLog.addContext('module', __MODULE_NAME__);
