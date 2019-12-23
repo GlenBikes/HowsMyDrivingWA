@@ -1,4 +1,3 @@
-let app_root_dir = require('app-root-dir').get();
 
 /* Setting things up. */
 import * as AWS from 'aws-sdk';
@@ -45,46 +44,36 @@ const express = require('express'),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require('path'),
   Q = require('dynamo-batchwrite-queue'),
-  soap = require('soap');
+  soap = require('soap'),
+  packpath = require('packpath');
+
+let packpath_parent = packpath.parent() ? packpath.parent() : packpath.self();
+let packpath_self = packpath.self();
+
 
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
 
-let pjson = require(path.join(app_root_dir, 'package.json'));
+const package_json_path = path.join(packpath_self, '/package.json');
+
+let pjson = require(package_json_path);
 
 export var __MODULE_NAME__: string = pjson.name;
 
 import { log, lastdmLog, lastmentionLog } from './logging';
+log.info(`package.json: ${package_json_path}.`);
 
 const redis_port: number = getUnusedPort();
 const redis_srv = new redis_server({
   port: redis_port,
-  bin: path.join(app_root_dir, '.data/redis-server')
+  bin: path.join(packpath_parent, '/.data/redis-server')
 });
+
+const PROCESS_EXIT_CODES = {
+  'no-regions': -20
+};
 
 var processing_mutex;
-
-/*
-var tweet_processing_mutex = mutex({
-  id: uuid.v1(),
-  strategy: { name: 'redis' }
-});
-var dm_processing_mutex = mutex({ id: uuid.v1(), strategy: { name: 'redis' } });
-var request_processing_mutex = mutex({
-  id: uuid.v1(),
-  strategy: { name: 'redis' }
-});
-var citation_processing_mutex = mutex({
-  id: uuid.v1(),
-  strategy: { name: 'redis' }
-});
-var report_item_processing_mutex = mutex({
-  id: uuid.v1(),
-  strategy: { name: 'redis' }
-});
-var tweet_sending_mutex = mutex({ id: uuid.v1(), strategy: { name: 'redis' } });
-var dm_sending_mutex = mutex({ id: uuid.v1(), strategy: { name: 'redis' } });
-*/
 
 // We lock a mutex when doing any of the processing steps to make sure we never 
 // have multiple "threads" concurrently reading tweets/DB and writing DB/tweets.
@@ -182,22 +171,6 @@ const MUTEX_KEY: { [index: string]: string } = {
   dm_sending: '__HOWSMYDRIVING_DM_SENDING__'
 };
 
-/*
-var tweet_processing_mutex = new MutexPromise(MUTEX_KEY['tweet_processing'], mutex_opts);
-var dm_processing_mutex = new MutexPromise(MUTEX_KEY['dm_processing'], mutex_opts);
-var request_processing_mutex = new MutexPromise(
-  MUTEX_KEY['request_processing'], mutex_opts
-);
-var citation_processing_mutex = new MutexPromise(
-  MUTEX_KEY['citation_processing'], mutex_opts
-);
-var report_item_processing_mutex = new MutexPromise(
-  MUTEX_KEY['report_item_processing'], mutex_opts
-);
-var tweet_sending_mutex = new MutexPromise(MUTEX_KEY['tweet_reading'], mutex_opts);
-var dm_sending_mutex = new MutexPromise(MUTEX_KEY['dm_reading'], mutex_opts);
-*/
-
 app.use(express.static('public'));
 
 var listener = app.listen(process.env.PORT, function() {
@@ -229,9 +202,20 @@ log.info('Loading regions...');
 const regions: { [key: string]: IRegion } = {};
 let import_promises: Array<Promise<void>> = [];
 
+if (!process.env.REGIONS || process.env.REGIONS.split(',').length == 0) {
+  log.error(`No regions configured in process.env.REGIONS. Aborting.`);
+  process.exit(PROCESS_EXIT_CODES['no-regions']);
+}
+
 // TODO: This needs to be async
 process.env.REGIONS.split(',').forEach(region_package => {
   region_package = region_package.trim();
+  
+  if (!region_package || region_package.length === 0) {
+    log.error(`No regions configured in process.env.REGIONS. Aborting.`);
+    process.exit(PROCESS_EXIT_CODES['no-regions']);
+  }
+  
   log.info(`Loading package ${region_package}`);
   import_promises.push(
     new Promise<any>((resolve, reject) => {
