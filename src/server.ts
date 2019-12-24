@@ -706,7 +706,7 @@ function processRequestRecords(): Promise<void> {
                 id: GetHowsMyDrivingId(),
                 citation_id: CitationIds.CitationIDNoPlateFound,
                 Citation: CitationIds.CitationIDNoPlateFound,
-                region: 'dummy', // Not a valid region, but we don't pass this one down to region plugins.
+                region: 'Global', // Not a valid region, but we don't pass this one down to region plugins.
                 processing_status: 'UNPROCESSED',
                 license: item.license,
                 request_id: item.id,
@@ -988,7 +988,7 @@ function processCitationRecords(): Promise<void> {
 
           // Kick of the DB calls to get query counts for each of these requests
           log.debug(
-            `Starting queries for query counts of ${citationsByPlate} licenses.`
+            `Starting queries for query counts of ${citationsByPlate.length} licenses.`
           );
 
           // TODO: Is there a way to do this all in one query?
@@ -1005,7 +1005,7 @@ function processCitationRecords(): Promise<void> {
 
           // Block until all those GetQueryCount calls are done.
           log.debug(
-            `Waiting for ${citationsByPlate} license query count queries to complete...`
+            `Waiting for ${citationsByPlate.length} license query count queries to complete...`
           );
 
           Promise.all(Object.values(requestsforplate_promises))
@@ -1106,7 +1106,7 @@ function processCitationRecords(): Promise<void> {
                 Object.keys(report_items_by_request[request_id]).forEach(region_name => {
                   if (report_items_by_request[request_id][region_name])
                   log.info(
-                    ` - ${report_items_by_request[request_id][region_name]} for request ${request_id} for region ${region_name}`
+                    ` - ${report_items_by_request[request_id][region_name]} for request ${request_id} for ${region_name} region`
                   );
                 });
               });
@@ -1137,8 +1137,8 @@ function processCitationRecords(): Promise<void> {
                             citationsByRequest[request_id][region_name]
                           ).length
                         } citation records for request ${request_id} ${
-                          licenseByRequest[request_id]
-                        } in ${region_name} region`;
+                          licenseByRequest[request_id] === ':' ? 'invalid license' : licenseByRequest[request_id]
+                        } in ${region_name} region.`;
 
                         citationsByRequest[request_id][region_name].forEach(
                           (citation, index) => {
@@ -1266,7 +1266,7 @@ function processReportItemRecords(): Promise<void> {
           Object.keys(reportItemsByRequest).forEach((request_id: string) => {
             Object.keys(reportItemsByRequest[request_id]).forEach(
               region_name => {
-                log.info(`Pushing promise for request ${request_id} region ${region_name}.`);
+                log.debug(`Pushing promise for request ${request_id} region ${region_name}.`);
                 
                 request_promises.push( new Promise<void>(
                   (resolve, reject) => {
@@ -1314,7 +1314,7 @@ function processReportItemRecords(): Promise<void> {
                         )
                           .then(tweets_sent_count => {
                             log.info(
-                              `Finished sending ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} for ${region_name} region.`
+                              `Finished sending ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license == ':' ? "'invalid license'" : ${report_item.license} for ${region_name} region.`
                             );
 
                             if (
