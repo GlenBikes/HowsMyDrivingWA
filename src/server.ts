@@ -1314,7 +1314,7 @@ function processReportItemRecords(): Promise<void> {
                         )
                           .then(tweets_sent_count => {
                             log.info(
-                              `Finished sending ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license == ':' ? "'invalid license'" : ${report_item.license} for ${region_name} region.`
+                              `Finished sending ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license == ':' ? "'invalid license'" : report_item.license} for ${region_name} region.`
                             );
 
                             if (
