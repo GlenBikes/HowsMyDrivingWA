@@ -47,14 +47,12 @@ const express = require('express'),
   soap = require('soap'),
   packpath = require('packpath');
 
-let packpath_parent = packpath.parent() ? packpath.parent() : packpath.self();
-let packpath_self = packpath.self();
-
-
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
 
-const package_json_path = path.join(packpath_self, '/package.json');
+// packpath.self() does not seem to work for a top-level app.
+// Just use packpath.parent{} which is /app.
+const package_json_path = path.join(packpath.parent(), '/package.json');
 
 let pjson = require(package_json_path);
 
@@ -65,7 +63,7 @@ import { log, lastdmLog, lastmentionLog } from './logging';
 const redis_port: number = getUnusedPort();
 const redis_srv = new redis_server({
   port: redis_port,
-  bin: path.join(packpath_parent, '/.data/redis-server')
+  bin: path.join(packpath.parent(), '/.data/redis-server')
 });
 
 const PROCESS_EXIT_CODES = {
