@@ -61,7 +61,6 @@ let pjson = require(package_json_path);
 export var __MODULE_NAME__: string = pjson.name;
 
 import { log, lastdmLog, lastmentionLog } from './logging';
-log.info(`package.json: ${package_json_path}.`);
 
 const redis_port: number = getUnusedPort();
 const redis_srv = new redis_server({
@@ -76,7 +75,7 @@ const PROCESS_EXIT_CODES = {
 var processing_mutex;
 
 // We lock a mutex when doing any of the processing steps to make sure we never 
-// have multiple "threads" concurrently reading tweets/DB and writing DB/tweets.
+// have multiple "threads" concurrently reading tweets/DB and writing DB / tweets.
 // Most of these are relatively fast operations
 const mutex_lock_opts = {
   duration: 5 * 60 * 1000,
@@ -102,30 +101,30 @@ const mutex_lock_opts_send_tweets = {
 
 redis_srv
   .on('open', () => {
-    log.info(`redis_srv started on port ${redis_port}. Creating mutex...`);
+    log.debug(`redis_srv started on port ${redis_port}. Creating mutex...`);
     processing_mutex = mutex( {id: uuid.v1(), strategy: { name: 'redis', connectionString: `redis://127.0.0.1:${redis_port}`} } );
-    log.info(`Mutex created.`);
+    log.debug(`Mutex created.`);
   })
   .on('opening', () => {
-    log.info('redis_srv opening...');
+    log.debug('redis_srv opening...');
   })
   .on('closing', () => {
-    log.info('redis_srv closing...');
+    log.debug('redis_srv closing...');
   })
   .on('close', () => {
-    log.info('redis_srv closed.');
+    log.debug('redis_srv closed.');
   });
 
 redis_srv
   .open()
   .then(() => {
-    log.info(`redis_srv open completed.`);
+    log.debug(`redis_srv open completed.`);
   })
   .catch((err: Error) => {
     handleError(err);
   });
 
-const noCitationsFoundMessage = 'No citations found for plate #',
+const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #__LICENSE__.',
   noValidPlate =
     'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #',
   citationQueryText = 'License #__LICENSE__ has been queried __COUNT__ times.';
@@ -1042,6 +1041,7 @@ function processCitationRecords(): Promise<void> {
 
                       let message: string = GetReportItemForPseudoCitation(
                         citation,
+                        region_name,
                         license_query_hash[citation.license]
                       );
 
@@ -1103,7 +1103,8 @@ function processCitationRecords(): Promise<void> {
               );
 
               Object.keys(citationsByRequest).forEach(request_id => {
-                Object.keys(regions).forEach(region_name => {
+                Object.keys(report_items_by_request[request_id]).forEach(region_name => {
+                  if (report_items_by_request[request_id][region_name])
                   log.info(
                     ` - ${report_items_by_request[request_id][region_name]} for request ${request_id} for region ${region_name}`
                   );
@@ -1287,7 +1288,7 @@ function processReportItemRecords(): Promise<void> {
                           reportItemsByRequest[request_id][region_name][0];
 
                         log.info(
-                          `Processing ${report_items.length} report items for ${region_name} region...`
+                          `Processing ${reportItemsByRequest[request_id][region_name].length} report items for ${region_name} region...`
                         );
 
                         // Build a fake tweet for the request report_item
@@ -1482,6 +1483,7 @@ function batchWriteWithExponentialBackoff(
 
 function GetReportItemForPseudoCitation(
   citation: ICitation,
+  region_name: string,
   query_count: number
 ): string {
   if (!citation || citation.citation_id >= CitationIds.MINIMUM_CITATION_ID) {
@@ -1495,7 +1497,9 @@ function GetReportItemForPseudoCitation(
 
     case CitationIds.CitationIDNoCitationsFound:
       return (
-        `${noCitationsFoundMessage}${formatPlate(citation.license)}` +
+        noCitationsFoundMessage
+          .replace('__LICENSE__', formatPlate(citation.license))
+          .replace('__REGION_NAME__', region_name) +
         '\n\n' +
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
@@ -1548,7 +1552,9 @@ function parseTweet(text: string) {
     plate = matches[2];
 
     if (StatesAndProvinces.indexOf(state.toUpperCase()) < 0) {
-      handleError(new Error(`Invalid state: ${state}`));
+      log.warn(`Invalid state: ${state}`);
+      state = '';
+      plate = '';
     }
   }
 

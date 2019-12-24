@@ -24,7 +24,6 @@ export let log = log4js.getLogger('result'),
 log.addContext('module', __MODULE_NAME__);
 lastdmLog.addContext('module', __MODULE_NAME__);
 lastmentionLog.addContext('module', __MODULE_NAME__);
-log.info(`log4js.json: ${config_path}.`);
 
 
 /**
