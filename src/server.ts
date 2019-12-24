@@ -122,9 +122,9 @@ redis_srv
     handleError(err);
   });
 
-const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #__LICENSE__.',
+const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #__LICENSE__ . [__DATETIME__]',
   noValidPlate =
-    'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #',
+    'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #. [__DATETIME__]',
   citationQueryText = 'License #__LICENSE__ has been queried __COUNT__ times.';
 
 const app = express();
@@ -1022,7 +1022,7 @@ function processCitationRecords(): Promise<void> {
                   region_name => {
                     report_items_by_request[request_id][region_name] = 0;
                     log.debug(
-                      `Processing citations for request ${request_id} region ${region_name}.`
+                      `Processing citations for request ${request_id} in region ${region_name}.`
                     );
                     // Get the first citation to access citation columns
                     let citation: ICitationRecord =
@@ -1104,7 +1104,7 @@ function processCitationRecords(): Promise<void> {
                 Object.keys(report_items_by_request[request_id]).forEach(region_name => {
                   if (report_items_by_request[request_id][region_name])
                   log.info(
-                    ` - ${report_items_by_request[request_id][region_name]} for request ${request_id} for ${region_name} region`
+                    ` - ${report_items_by_request[request_id][region_name]} for request ${request_id} license ${licenseByRequest[request_id] === ':' ? 'invalid license' : licenseByRequest[request_id]} for ${region_name} region`
                   );
                 });
               });
@@ -1490,14 +1490,15 @@ function GetReportItemForPseudoCitation(
 
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
-      return noValidPlate;
+      return noValidPlate.replace('__DATETIME__', new Date().toLocaleTimeString());
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
       return (
         noCitationsFoundMessage
           .replace('__LICENSE__', formatPlate(citation.license))
-          .replace('__REGION_NAME__', region_name) +
+          .replace('__REGION_NAME__', region_name)
+          .replace('__DATETIME__', new Date().toLocaleTimeString()) +
         '\n\n' +
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
