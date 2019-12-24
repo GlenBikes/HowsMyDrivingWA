@@ -47,6 +47,7 @@ var watcher = chokidar.watch(config_path, {
  *       they update to the new log level?
  **/
 function reloadlog(reason: string) {
+  /*
   log.info(`Reloading log config due to config file ${reason}.`);
 
   // Leave the current log active until after we replace it.
@@ -57,30 +58,20 @@ function reloadlog(reason: string) {
       if (err) {
         log.error(`Error occurred during log shutdown: ${err}.`);
       }
+
+      sleep(10000).then( () => {
+        log4js.configure(config_path);
+        log = log4js.getLogger('reason');
+        lastdmLog = log4js.getLogger('_lastdm');
+        lastmentionLog = log4js.getLogger('_lastdm');
+        log.addContext('module', __MODULE_NAME__);
+        lastdmLog.addContext('module', __MODULE_NAME__);
+        lastmentionLog.addContext('module', __MODULE_NAME__);
+      });
     });
   } catch (err) {
       log.error(`Error occurred during log shutdown: ${err}.`);
   }
-
-  log4js.configure(config_path);
-  log = log4js.getLogger('reason');
-  lastdmLog = log4js.getLogger('_lastdm');
-  lastmentionLog = log4js.getLogger('_lastdm');
-  log.addContext('module', __MODULE_NAME__);
-  lastdmLog.addContext('module', __MODULE_NAME__);
-  lastmentionLog.addContext('module', __MODULE_NAME__);
-
-  /*
-  log4js.shutdown(() => {
-    log4js.configure(config_path);
-    log = log4js.getLogger('reason');
-    lastdmLog = log4js.getLogger('_lastdm');
-    lastmentionLog = log4js.getLogger('_lastdm');
-
-    log.addContext('module', __MODULE_NAME__);
-    lastdmLog.addContext('module', __MODULE_NAME__);
-    lastmentionLog.addContext('module', __MODULE_NAME__);
-  });
   */
 }
 

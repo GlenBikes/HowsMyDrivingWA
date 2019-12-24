@@ -1,11 +1,5 @@
 {
   "appenders": {
-    "test": {
-      "type": "file",
-      "filename": "log/test.log",
-      "maxLogSize": 1048576,
-      "numBackups": 2
-    },
     "stdout": {
       "type": "stdout",
       "layout": {
@@ -83,7 +77,6 @@
       "level": "debug"
     },
     "error": { "appenders": ["error", "error-filter"], "level": "error" },
-    "warn": { "appenders": ["warn", "warn-filter"], "level": "warn" },
-    "test": { "appenders": ["test", "stdout"], "level": "info" }
+    "warn": { "appenders": ["warn", "warn-filter"], "level": "warn" }
   }
 }
