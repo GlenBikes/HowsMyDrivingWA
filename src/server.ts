@@ -430,6 +430,57 @@ app.all('/processreportitems', (request: Request, response: Response) => {
   );
 });
 
+app.all('/searchtest', function(request: Request, response: Response) {
+  var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+  var tweet_promises = [];
+
+  log.debug(`Locking processing_mutex for ${MUTEX_KEY['tweet_processing']}...`);
+
+  processing_mutex.lock(
+    MUTEX_KEY['tweet_processing'],
+    mutex_lock_opts_send_tweets,
+    (err, lock) => {
+      if (err) {
+        handleError(err);
+      }
+
+      try {
+        log.debug(`Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`);
+
+        if (!request.query.hasOwnProperty('since_id')) {
+          handleError(new Error('Error: since_id is required for /searchtest'));
+        }
+
+        var twitter_promises: Array<Promise<Array<ITweet>>> = [];
+
+        let get_tweets_promise: Promise<Array<ITweet>> = GetNewTweets(
+          request.query.since_id,
+          'HowsMyDrivingWA'
+        );
+
+        twitter_promises.push(get_tweets_promise);
+        // TODO: Move DM's out, wrapped w their own mutex
+
+        // Now wait until processing of both tweets and dms is done.
+        get_tweets_promise
+          .then(tweets => {
+            response.set('Cache-Control', 'no-store');
+            response.json(tweets);
+          })
+          .catch((err: Error) => {
+            handleError(err);
+          });
+      } catch (err) {
+        log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
+        processing_mutex.unlock(lock);
+        log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
+        response.status(500).send(err);
+      }
+    }
+  );
+});
+
 app.all(
   ['/errors', '/error', '/err'],
   (request: Request, response: Response) => {
@@ -516,11 +567,13 @@ app.all('/dumpfile', (request: Request, response: Response) => {
 });
 
 app.all('/dumptweet', (request: Request, response: Response) => {
+  console.log('dumptweet');
   try {
     if (request.query.hasOwnProperty('id')) {
-      var tweet = GetTweetById(request.query.id);
-      response.set('Cache-Control', 'no-store');
-      response.json(tweet);
+      GetTweetById(request.query.id).then( (tweet) => {
+        response.set('Cache-Control', 'no-store');
+        response.json(tweet);
+      });
     } else {
       handleError(new Error('Error: id is required for /dumptweet'));
     }
@@ -866,7 +919,7 @@ function processRequestRecords(): Promise<void> {
                   Object.keys(citations_written[request_id]).forEach(
                     region_name => {
                       if (region_name === 'Invalid Plate') {
-                        msg += `\n  1 citations for invalid plate in request ${request_id}.`;
+                        msg += `\n  1 citations for request ${request_id} invalid plate in Global region.`;
                       } else {
                         msg += `\n  ${citations_written[request_id][region_name]} citations for request ${request_id} ${licenses[request_id]} in ${region_name} region.`;
                       }
@@ -1490,7 +1543,7 @@ function GetReportItemForPseudoCitation(
 
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
-      return noValidPlate.replace('__DATETIME__', new Date().toLocaleTimeString());
+      return noValidPlate.replace('__DATETIME__', new Date().toLocaleString());
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
@@ -1498,7 +1551,7 @@ function GetReportItemForPseudoCitation(
         noCitationsFoundMessage
           .replace('__LICENSE__', formatPlate(citation.license))
           .replace('__REGION_NAME__', region_name)
-          .replace('__DATETIME__', new Date().toLocaleTimeString()) +
+          .replace('__DATETIME__', new Date().toLocaleString()) +
         '\n\n' +
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
