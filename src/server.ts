@@ -153,7 +153,7 @@ AWS.config.update({ region: 'us-east-2' });
 const maxTweetLength: number = 280 - 17; // Max username is 15 chars + '@' plus the space after the full username
 const noCitations: string = 'No citations found for plate # ';
 const parkingAndCameraViolationsText: string =
-  'Total parking and camera violations for #';
+  'Total parking/camera violations for #';
 const violationsByYearText: string = 'Violations by year for #';
 const violationsByStatusText: string = 'Violations by status for #';
 const licenseQueriedCountText: string =
