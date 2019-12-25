@@ -126,7 +126,7 @@ const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #_
   // Included datetime since this tweet is the same all the time and therefore Twitter 
   // will prevent it with error code 187 as a duplicate.
   noValidPlate =
-    'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #. [__DATETIME__]',
+    'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #. __DATETIME__',
   citationQueryText = 'License #__LICENSE__ has been queried __COUNT__ times.';
 
 const app = express();
@@ -1103,7 +1103,7 @@ function processCitationRecords(): Promise<void> {
                       );
                       report_items_by_request[request_id][region_name] = 1;
 
-                      log.info(
+                      log.debug(
                         `Created 1 report item record for request ${request_id} ${licenseByRequest[request_id]} in ${region_name} region.`
                       );
                     } else {
@@ -1545,7 +1545,7 @@ function GetReportItemForPseudoCitation(
 
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
-      return noValidPlate.replace('__DATETIME__', `[new Date().toDateString() new Date().toDateString()]`);
+      return noValidPlate.replace('__DATETIME__', `[${new Date().toDateString()} ${new Date().toLocaleTimeString()}]`);
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
