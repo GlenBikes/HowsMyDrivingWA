@@ -122,7 +122,9 @@ redis_srv
     handleError(err);
   });
 
-const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #__LICENSE__ . [__DATETIME__]',
+const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #__LICENSE__.',
+  // Included datetime since this tweet is the same all the time and therefore Twitter 
+  // will prevent it with error code 187 as a duplicate.
   noValidPlate =
     'No valid license found. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #. [__DATETIME__]',
   citationQueryText = 'License #__LICENSE__ has been queried __COUNT__ times.';
@@ -955,7 +957,7 @@ function processRequestRecords(): Promise<void> {
                   .then(() => {
                     // This is the one success point for this request.
                     // All other codepaths indicate a failure.
-                    log.info(
+                    log.debug(
                       `Set ${request_update_records.length} request records to PROCESSED.`
                     );
 
@@ -974,7 +976,7 @@ function processRequestRecords(): Promise<void> {
               handleError(err);
             });
         } else {
-          log.info(
+          log.debug(
             `Resolving primary promise for processRequestRecords() since there were no request records.`
           );
           resolve();
@@ -1543,15 +1545,14 @@ function GetReportItemForPseudoCitation(
 
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
-      return noValidPlate.replace('__DATETIME__', new Date().toLocaleString());
+      return noValidPlate.replace('__DATETIME__', `[new Date().toDateString() new Date().toDateString()]`);
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
       return (
         noCitationsFoundMessage
           .replace('__LICENSE__', formatPlate(citation.license))
-          .replace('__REGION_NAME__', region_name)
-          .replace('__DATETIME__', new Date().toLocaleString()) +
+          .replace('__REGION_NAME__', region_name) +
         '\n\n' +
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
