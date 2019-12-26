@@ -5,7 +5,7 @@ dependencies:
   dynamo-batchwrite-queue: 1.0.1
   express: 4.17.1
   find-port-free-sync: 1.0.1
-  howsmydriving-dummy: 0.1.47
+  howsmydriving-dummy: 0.1.48
   howsmydriving-seattle: 0.1.44
   howsmydriving-twitter: 0.1.48
   howsmydriving-utils: 0.1.97
@@ -2677,7 +2677,7 @@ packages:
     dev: true
     resolution:
       integrity: sha512-kssjab8CvdXfcXMXVcvsXum4Hwdq9XGtRD3TteMEvEbq0LXyiNQr6AprqKqfeaDXze7SxWvRxdpwE6ku7ikLkg==
-  /howsmydriving-dummy/0.1.47:
+  /howsmydriving-dummy/0.1.48:
     dependencies:
       '@types/node': 12.12.22
       chokidar: 3.3.1
@@ -2689,7 +2689,7 @@ packages:
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-YP9RXha6jRPI8UXyMrt6yCPOuCoNHTvDjIqdawptL5uKox1+AmscU5dwGMdfWg4Ppp5aYzc7thOBT7YAGzHCcQ==
+      integrity: sha512-5UDnVDJPL4oLqiloZdpyYNUEhtMp9IE5FcEt1PLI7ZOIf2gMecbADFGzbSPivphCqaHBJqE7TyLQhPECtuKpVg==
   /howsmydriving-seattle/0.1.44:
     dependencies:
       '@types/node': 12.12.22
@@ -6235,7 +6235,7 @@ specifiers:
   gulp-mocha: ^7.0.2
   gulp-prettier: ^2.3.0
   gulp-typescript: ^6.0.0-alpha.1
-  howsmydriving-dummy: ^0.1.47
+  howsmydriving-dummy: ^0.1.48
   howsmydriving-seattle: ^0.1.44
   howsmydriving-twitter: ^0.1.48
   howsmydriving-utils: ^0.1.97
