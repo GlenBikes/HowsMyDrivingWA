@@ -1,6 +1,7 @@
 dependencies:
   aws-sdk: 2.590.0
   chokidar: 3.3.1
+  consecutive: 5.0.5
   dynamo-batchwrite-queue: 1.0.1
   express: 4.17.1
   find-port-free-sync: 1.0.1
@@ -1009,6 +1010,10 @@ packages:
     dev: false
     resolution:
       integrity: sha1-lRO5W81An0LsKuVAoAER0jqZuaI=
+  /consecutive/5.0.5:
+    dev: false
+    resolution:
+      integrity: sha512-mx9vRmvKStKCsPf9vLipVK6k3W44gam+HBQ4S1CfGdcMCm2QqZ7swd2cxczkd7VlVf5PrHVW4zDIhG7wH6P3LA==
   /content-disposition/0.5.3:
     dependencies:
       safe-buffer: 5.1.2
@@ -6204,6 +6209,7 @@ specifiers:
   aws-sdk: ^2.578.0
   aws-sdk-mock: ^4.5.0
   chokidar: ^3.3.0
+  consecutive: ^5.0.5
   del: ^5.1.0
   dynamo-batchwrite-queue: ^1.0.1
   express: ^4.14.0

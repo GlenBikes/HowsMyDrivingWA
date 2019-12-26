@@ -3,6 +3,7 @@
 import * as AWS from 'aws-sdk';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 import { Request, Response } from 'express';
+import * as consecutive from 'consecutive';
 import * as http from 'http';
 import * as uuid from 'uuid';
 import * as mutex from 'mutex';
@@ -48,6 +49,7 @@ const express = require('express'),
 
 // Local storage to keep track of our last processed tweet/dm
 var localStorage = new LocalStorage('./.localstore');
+const next_unique_number = consecutive();
 
 // packpath.self() does not seem to work for a top-level app.
 // Just use packpath.parent{} which is /app.
@@ -914,20 +916,24 @@ function processRequestRecords(): Promise<void> {
                 tableNames['Citations'],
                 citation_records
               ).then(() => {
-                let msg: string = 'Finished writing:';
+                let total_citations: number = 0;
+                let msg: string = '';
 
                 Object.keys(citations_written).forEach(request_id => {
                   Object.keys(citations_written[request_id]).forEach(
                     region_name => {
                       if (region_name === 'Invalid Plate') {
                         msg += `\n  1 citations for request ${request_id} invalid plate in Global region.`;
+                        total_citations += 1;
                       } else {
                         msg += `\n  ${citations_written[request_id][region_name]} citations for request ${request_id} ${licenses[request_id]} in ${region_name} region.`;
+                        total_citations += citations_written[request_id][region_name];
                       }
                     }
                   );
                 });
 
+                msg = 'Finished writing ${total_citations} citation records:' + msg
                 log.info(msg);
 
                 var request_update_records: Array<any> = [];
@@ -1096,7 +1102,6 @@ function processCitationRecords(): Promise<void> {
                         region_name,
                         license_query_hash[citation.license]
                       );
-
                       report_items.push(
                         new ReportItemRecord(message, 0, citation)
                       );
@@ -1541,14 +1546,15 @@ function GetReportItemForPseudoCitation(
   if (!citation || citation.citation_id >= CitationIds.MINIMUM_CITATION_ID) {
     throw new Error(`ERROR: Unexpected citation ID: ${citation.citation_id}.`);
   }
-
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
-      return noValidPlate.replace('__DATETIME__', `[${new Date().toDateString()} ${new Date().toLocaleTimeString()}]`);
+      // We need to ensure that we never create 
+      let now = new Date();
+      return noValidPlate.replace('__DATETIME__', `[${now.toDateString()} ${now.toLocaleTimeString()}:${now.getMilliseconds()} [${next_unique_number()}]]`);
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
-      return (
+      return
         noCitationsFoundMessage
           .replace('__LICENSE__', formatPlate(citation.license))
           .replace('__REGION_NAME__', region_name) +
@@ -1556,7 +1562,6 @@ function GetReportItemForPseudoCitation(
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
           .replace('__COUNT__', query_count.toString())
-      );
       break;
 
     default:
