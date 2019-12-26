@@ -10,14 +10,11 @@ import * as mutex from 'mutex';
 import * as redis_server from 'redis-server';
 
 // howsmydriving-utils
-import { Citation } from 'howsmydriving-utils';
-import { CitationIds } from 'howsmydriving-utils';
-import { DumpObject } from 'howsmydriving-utils';
-import { IRegion } from 'howsmydriving-utils';
-import { ICitation } from 'howsmydriving-utils';
+import { Citation, CitationIds } from 'howsmydriving-utils';
+import { DumpObject, PrintTweet } from 'howsmydriving-utils';
+import { ICitation, IRegion } from 'howsmydriving-utils';
 import { CompareNumericStrings } from 'howsmydriving-utils';
 import { SplitLongLines } from 'howsmydriving-utils';
-import { PrintTweet } from 'howsmydriving-utils';
 
 import {
   GetNewTweets,
@@ -25,7 +22,8 @@ import {
   GetTweetById,
   SendTweets,
   ITweet,
-  ITwitterUser
+  ITwitterUser,
+  IGetTweetsResponse
 } from 'howsmydriving-twitter';
 
 // interfaces internal to project
@@ -250,10 +248,8 @@ app.all('/tweet', function(request: Request, response: Response) {
   var docClient: any = new AWS.DynamoDB.DocumentClient();
 
   /* First, let's load the ID of the last tweet we responded to. */
-  var maxTweetIdRead: string;
-  var maxDmIdRead: string;
-  var last_mention_id = (maxTweetIdRead = getLastMentionId());
-  var last_dm_id = (maxDmIdRead = getLastDmId());
+  var last_mention_id = getLastMentionId();
+  var last_dm_id = getLastDmId();
 
   if (!last_mention_id) {
     handleError(new Error('ERROR: No last tweet found!'));
@@ -278,29 +274,28 @@ app.all('/tweet', function(request: Request, response: Response) {
       try {
         log.debug(`Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`);
 
-        var twitter_promises: Array<Promise<Array<ITweet>>> = [];
+        var twitter_promises: Array<Promise<IGetTweetsResponse>> = [];
 
-        let get_tweets_promise: Promise<Array<ITweet>> = GetNewTweets(
+        let get_tweets_promise: Promise<IGetTweetsResponse> = GetNewTweets(
           last_mention_id
         );
 
-        var dm_process_promise = GetNewDMs(last_dm_id);
-
+        // TODO: Add DM's
         twitter_promises.push(get_tweets_promise);
-        // TODO: Move DM's out, wrapped w their own mutex
-        twitter_promises.push(dm_process_promise);
 
         // Now wait until processing of both tweets and dms is done.
         get_tweets_promise
-          .then(tweets => {
-              processTweets(tweets, docClient)
+          .then( ( resp ) => {
+              processTweets(resp.tweets, docClient)
                 .then(requests_written => {
-                  if (tweets.length == 0) {
+                  if (resp.tweets.length == 0) {
                     log.info(`No new mentions found.`);
                   }
                   else {
                     log.debug(`Finished processing tweets.`);
                   }
+                  
+                  setLastMentionId(resp.last_tweet_read_id);
 
                   log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`);
                   processing_mutex.unlock(lock);
@@ -455,9 +450,9 @@ app.all('/searchtest', function(request: Request, response: Response) {
           handleError(new Error('Error: since_id is required for /searchtest'));
         }
 
-        var twitter_promises: Array<Promise<Array<ITweet>>> = [];
+        var twitter_promises: Array<Promise<IGetTweetsResponse>> = [];
 
-        let get_tweets_promise: Promise<Array<ITweet>> = GetNewTweets(
+        let get_tweets_promise: Promise<IGetTweetsResponse> = GetNewTweets(
           request.query.since_id,
           'HowsMyDrivingWA'
         );
@@ -467,9 +462,9 @@ app.all('/searchtest', function(request: Request, response: Response) {
 
         // Now wait until processing of both tweets and dms is done.
         get_tweets_promise
-          .then(tweets => {
+          .then(resp => {
             response.set('Cache-Control', 'no-store');
-            response.json(tweets);
+            response.json(resp.tweets);
           })
           .catch((err: Error) => {
             handleError(err);
@@ -625,19 +620,11 @@ export function processTweets(
   docClient: AWS.DynamoDB.DocumentClient
 ): Promise<number> {
   return new Promise<number>((resolve, reject) => {
-    /* First, let's load the ID of the last tweet we responded to. */
-    var maxTweetIdRead;
-    var last_mention_id = (maxTweetIdRead = getLastMentionId());
-
     var batch_write_promise: Promise<void>;
     var request_records: Array<any> = [];
 
     if (tweets.length > 0) {
       tweets.forEach((tweet: ITweet) => {
-        if (CompareNumericStrings(maxTweetIdRead, tweet.id_str) < 0) {
-          maxTweetIdRead = tweet.id_str;
-        }
-
         const { state, plate } = parseTweet(tweet.full_text);
         var now = Date.now();
 
@@ -671,13 +658,6 @@ export function processTweets(
         request_records
       );
     }
-
-    // Update the ids of the last tweet/dm if we processed
-    // anything with larger ids.
-    if (CompareNumericStrings(maxTweetIdRead, last_mention_id) > 0) {
-      setLastMentionId(maxTweetIdRead);
-    }
-
     if (batch_write_promise) {
       batch_write_promise
         .then(() => {
@@ -1548,13 +1528,19 @@ function GetReportItemForPseudoCitation(
   }
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
-      // We need to ensure that we never create 
+      // We need to ensure that we never create two of these 'no plate found'
+      // messages that are identical or Twitter will prevent the second one
+      // from being tweeted with a 187 error.
+      // Add the full date/time and a process-wide unique increasing number at
+      // the end. The increasing number resets to zero every time the process
+      // restarts but as long as there is at least 1ms between each generation
+      // of these messages, uniqueness will be ensured.
       let now = new Date();
       return noValidPlate.replace('__DATETIME__', `[${now.toDateString()} ${now.toLocaleTimeString()}:${now.getMilliseconds()} [${next_unique_number()}]]`);
       break;
 
     case CitationIds.CitationIDNoCitationsFound:
-      return
+      return (
         noCitationsFoundMessage
           .replace('__LICENSE__', formatPlate(citation.license))
           .replace('__REGION_NAME__', region_name) +
@@ -1562,6 +1548,7 @@ function GetReportItemForPseudoCitation(
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
           .replace('__COUNT__', query_count.toString())
+        );
       break;
 
     default:
