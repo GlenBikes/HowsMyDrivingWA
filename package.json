@@ -16,7 +16,7 @@
     "find-port-free-sync": "^1.0.1",
     "howsmydriving-dummy": "^0.1.47",
     "howsmydriving-seattle": "^0.1.44",
-    "howsmydriving-twitter": "^0.1.46",
+    "howsmydriving-twitter": "^0.1.48",
     "howsmydriving-utils": "^0.1.97",
     "log4js": "^4.0.2",
     "mutex": "^1.0.4",

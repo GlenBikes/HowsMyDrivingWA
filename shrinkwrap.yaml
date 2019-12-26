@@ -7,7 +7,7 @@ dependencies:
   find-port-free-sync: 1.0.1
   howsmydriving-dummy: 0.1.47
   howsmydriving-seattle: 0.1.44
-  howsmydriving-twitter: 0.1.46
+  howsmydriving-twitter: 0.1.48
   howsmydriving-utils: 0.1.97
   log4js: 4.5.1
   mutex: 1.0.4
@@ -2720,6 +2720,22 @@ packages:
       node: 10.x
     resolution:
       integrity: sha512-Wrx1IniY7ffRnQPrPyu64QTJLb9/ljUMkmIyaC35/SiWrolLABMXCS8veofZ+YK37VSqpUCrc/i/grC5QuLUWQ==
+  /howsmydriving-twitter/0.1.48:
+    dependencies:
+      chokidar: 3.3.1
+      file-system: 2.2.2
+      howsmydriving-utils: 0.1.97
+      log4js: 4.5.1
+      mutex-promise: 0.1.0
+      packpath: 0.1.0
+      soap: 0.30.0
+      twit: 2.2.11
+      uuid: 3.3.3
+    dev: false
+    engines:
+      node: 10.x
+    resolution:
+      integrity: sha512-jdwPPt8xlRanwlKNU1hlV+M2LRSsKuj5Rej4+P1ZqOOXQ5jCv5OQ5MrBJdF+n4D7wFtT3z2I1OIld3aW87JNmg==
   /howsmydriving-utils/0.1.97:
     dependencies:
       '@types/node': 12.12.22
@@ -6221,7 +6237,7 @@ specifiers:
   gulp-typescript: ^6.0.0-alpha.1
   howsmydriving-dummy: ^0.1.47
   howsmydriving-seattle: ^0.1.44
-  howsmydriving-twitter: ^0.1.46
+  howsmydriving-twitter: ^0.1.48
   howsmydriving-utils: ^0.1.97
   log4js: ^4.0.2
   mocha: ^6.2.2
