@@ -44,7 +44,6 @@ const express = require('express'),
   LocalStorage = require('node-localstorage').LocalStorage,
   path = require('path'),
   Q = require('dynamo-batchwrite-queue'),
-  soap = require('soap'),
   packpath = require('packpath');
 
 // Local storage to keep track of our last processed tweet/dm
