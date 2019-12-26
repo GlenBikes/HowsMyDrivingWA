@@ -1546,9 +1546,6 @@ function GetReportItemForPseudoCitation(
   if (!citation || citation.citation_id >= CitationIds.MINIMUM_CITATION_ID) {
     throw new Error(`ERROR: Unexpected citation ID: ${citation.citation_id}.`);
   }
-
-  var msg: string;
-
   switch (citation.citation_id) {
     case CitationIds.CitationIDNoPlateFound:
       // We need to ensure that we never create 
