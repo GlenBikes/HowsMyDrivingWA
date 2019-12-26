@@ -48,7 +48,7 @@ export class ReportItemRecord implements IReportItemRecord {
     this.license = citation.license;
     this.region = citation.region;
     this.tweet_id = citation.tweet_id;
-    this.tweet_id_str = citation.tweet_user_screen_name;
+    this.tweet_id_str = citation.tweet_id_str;
     this.tweet_user_screen_name = citation.tweet_user_screen_name;
     this.processing_status = 'UNPROCESSED';
     this.created = now;
