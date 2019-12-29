@@ -28,8 +28,11 @@ export interface IReportItemRecord {
   record_num: number;
   license: string;
   region: string;
+  tweet_retry_count: string;
   tweet_id: number;
   tweet_id_str: string;
+  tweet_user_id: string;
+  tweet_user_id_str: string;
   tweet_user_screen_name: string;
   processing_status: string;
   created: number;
@@ -47,8 +50,11 @@ export class ReportItemRecord implements IReportItemRecord {
     this.record_num = record_num;
     this.license = citation.license;
     this.region = citation.region;
+    this.tweet_retry_count = "0";
     this.tweet_id = citation.tweet_id;
     this.tweet_id_str = citation.tweet_id_str;
+    this.tweet_user_id = citation.tweet_user_id;
+    this.tweet_user_id_str = citation.tweet_user_id_str;
     this.tweet_user_screen_name = citation.tweet_user_screen_name;
     this.processing_status = 'UNPROCESSED';
     this.created = now;
@@ -64,8 +70,11 @@ export class ReportItemRecord implements IReportItemRecord {
   record_num: number;
   license: string;
   region: string;
+  tweet_retry_count: string;
   tweet_id: number;
   tweet_id_str: string;
+  tweet_user_id: string;
+  tweet_user_id_str: string;
   tweet_user_screen_name: string;
   processing_status: string;
   created: number;
