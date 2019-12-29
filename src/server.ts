@@ -184,7 +184,7 @@ process
     listener.close();
   })
   .on('uncaughtException', err => {
-    log.error(`Caught unhandled exception: ${err}\n`);
+    log.error(`Caught unhandled exception: ${err}\n ${err.stack}`);
   })
   .on('unhandledRejection', (reason, promise) => {
     log.error(
@@ -879,7 +879,7 @@ function processRequestRecords(): Promise<void> {
                         resolve();
                       })
                       .catch((err: Error) => {
-                        handleError(err);
+                        reject(err);
                       });
                   })
                 );
@@ -1321,14 +1321,14 @@ function processReportItemRecords(): Promise<void> {
                       mutex_lock_opts,
                       (err, lock) => {
 
-                        try {
-                          log.debug(`Locked processing_mutex.`);
-                          if (err) {
-                            log.error(`Error in lock call: ${err}.`);
-                            handleError(err);
-                          }
+                        if (err) {
+                          log.error(`Error in lock call for request ${request_id} region ${region_name}: ${err}.`);
+                          reject(err);
+                          return;
+                        }
 
-                          log.debug(`Locked processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}.`);
+                        try {
+                        log.debug(`Locked processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}.`);
 
                         // Get the first report_item to access report_item columns
                         var report_item =
@@ -1355,8 +1355,6 @@ function processReportItemRecords(): Promise<void> {
                           `Posting ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} in ${region_name} region.`
                         );
                           
-                        log.info(`About to call SendTweets with orig_tweet: ${DumpObject(orig_tweet)}.`);
-
                         SendTweets(
                           region_name,
                           orig_tweet,
@@ -1391,54 +1389,57 @@ function processReportItemRecords(): Promise<void> {
                             ] += tweets_sent_count;
 
                             log.debug(`Resolving request_promise as success for request ${request_id} region ${region_name}`);
+
+                            log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
+                            processing_mutex.unlock(lock);
+                            log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}.`);
+
                             resolve();
                           })
                           .catch((err: Error) => {
-                            log.info(`We got an error.`);
                             if (err.name === 'DuplicateError') {
                               if (
                                   !report_item.hasOwnProperty('tweet_retry_count') || 
                                   (CompareNumericStrings(report_item.tweet_retry_count, "20") < 0)
                                 ) {
-                                log.info(`Duplicate tweet attempt that can be retried.`);
+                                log.info(`Duplicate tweet attempt that can be retried for request ${request_id} region ${region_name}.`);
+                                
                                 // This means Twitter detected a tweet as a duplicate in a way
                                 // that we can retry sending this thread of tweets later.
                                 report_item_records_to_retry = report_item_records_to_retry.concat(reportItemsByRequest[request_id][region_name]);
-                                log.info(`We made it past concat.`);
                                 reportItemsByRequest[request_id][region_name] = [];
-                                log.info(`We reset the reportItemsByRequest.`);
 
-                                log.debug(`Resolving request_promise as retry for request ${request_id} region ${region_name}`);
+                                log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on retry ${request_id} region ${region_name}...`);
+                                processing_mutex.unlock(lock);
+                                log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on retry ${request_id} region ${region_name}.`);
+
                                 resolve();
                               } else {
                                 log.error(`Tweets for request ${request_id} region ${region_name} were retried the max number of times. Pretending they succeeded.`);
+
+                                log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}...`);
+                                processing_mutex.unlock(lock);
+                                log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}.`);
+
                                 resolve();
                               }
                             } else {
-                              log.info(`We did not make it into the if statement.`);
-                              log.error(`Real error in SendTweets`);
+                              log.error(`Real non-retry-later error in SendTweets. err: ${err}.`);
+
+                              log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}...`);
+                              processing_mutex.unlock(lock);
+                              log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}.`);
+
                               reject(err);
                             }
-                          }).finally( () => {
-                            log.info('In finally block around SendTweets.');
                           });
-                          
-                          log.info(`Finished making call to SendTweets.`);
                         } catch( err ) {
-                          log.info(`processReportItemRecords: Exception occurred for request ${request_id} region ${region_name}. err: ${err}`);
+                          log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}...`);
+                          processing_mutex.unlock(lock);
+                          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}.`);
+
                           reject(err);
-                        } finally {
-                          log.info(`In 2nd level finally block within request promise.`);
-
-
-                          if (lock) {
-                            log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in finally for request ${request_id} region ${region_name}...`);
-                            processing_mutex.unlock(lock);
-                            log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} in finally for request ${request_id} region ${region_name}.`);
-                          } else {
-                            log.info(`Not unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} on error for request ${request_id} region ${region_name} because lock was not successful.`)
-                          }
-                        }
+                        } 
                       });
                   })
                 );
@@ -1544,7 +1545,6 @@ function processReportItemRecords(): Promise<void> {
                   resolve();
                 })
                 .catch((err: Error) => {
-                  log.info(`In catch 2`);
                   reject(err);
                 });
             })
@@ -1558,7 +1558,7 @@ function processReportItemRecords(): Promise<void> {
         }
       })
       .catch((err: Error) => {
-        log.info(`In catch 3`);
+        log.error(`Error occurred in call to GetReportItemRecords: err: ${err}.`);
         reject(err);
       });
   });
