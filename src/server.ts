@@ -184,11 +184,11 @@ process
     listener.close();
   })
   .on('uncaughtException', err => {
-    log.error(`Caught exception: ${err}\n`);
+    log.error(`Caught unhandled exception: ${err}\n`);
   })
   .on('unhandledRejection', (reason, promise) => {
     log.error(
-      `Unhandled Rejection at: promise: ${DumpObject(
+      `Handling unhandled Rejection at: promise: ${DumpObject(
         promise
       )}, reason: ${reason}.`
     );
@@ -303,6 +303,10 @@ app.all('/tweet', function(request: Request, response: Response) {
                   response.sendStatus(200);
                 })
                 .catch(err => {
+                  log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
+                  processing_mutex.unlock(lock);
+                  log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
+
                   handleError(err);
                 });
             // TODO do the same for DM promise
@@ -392,6 +396,7 @@ app.all('/processcitations', (request: Request, response: Response) => {
 app.all('/processreportitems', (request: Request, response: Response) => {
   log.debug(`Locking processing_mutex for ${MUTEX_KEY['report_item_processing']}...`);
 
+  try {
   processing_mutex.lock(
     MUTEX_KEY['report_item_processing'],
     mutex_lock_opts,
@@ -400,31 +405,33 @@ app.all('/processreportitems', (request: Request, response: Response) => {
         handleError(err);
       }
 
-      try {
-        log.debug(`Locked processing_mutex for ${MUTEX_KEY['report_item_processing']}.`);
+      log.debug(`Locked processing_mutex for ${MUTEX_KEY['report_item_processing']}.`);
 
-        processReportItemRecords()
-          .then(() => {
-            log.info(`Finished processing report items.`);
+      processReportItemRecords()
+        .then(() => {
+          log.info(`Finished processing report items.`);
 
-            log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on success...`);
-            processing_mutex.unlock(lock);
-            log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on success.`);
+          log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on success...`);
+          processing_mutex.unlock(lock);
+          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on success.`);
 
-            response.sendStatus(200);
-          })
-          .catch(err => {
-            handleError(err);
-          });
-      } catch (err) {
-        log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`);
-        processing_mutex.unlock(lock);
-        log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on error.`);
+          response.sendStatus(200);
+        })
+        .catch( (err) => {
+          log.info(`Error processing report item records: ${err}.`);
 
-        response.status(500).send(err);
-      }
-    }
-  );
+          log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`);
+          processing_mutex.unlock(lock);
+          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on error.`);
+
+          response.status(500).send(err);
+        });
+    });
+  } catch (err) {
+    log.info(`Exception locking mutex before processing report item records: ${err}.`);
+    
+    response.status(500).send(err);
+  }
 });
 
 app.all('/searchtest', function(request: Request, response: Response) {
@@ -1259,7 +1266,7 @@ function processReportItemRecords(): Promise<void> {
               [region_name: string]: Array<IReportItemRecord>;
             };
           } = {};
-          var reportItemsToRetry: Array<IReportItemRecord> = [];
+          var report_item_records_to_retry: Array<IReportItemRecord> = [];
 
           // Sort them based on request and region
           report_items.forEach(report_item => {
@@ -1309,18 +1316,17 @@ function processReportItemRecords(): Promise<void> {
                   (resolve, reject) => {
                     log.debug(`Locking processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}...`);
                     
-                    try {
                     processing_mutex.lock(
                       MUTEX_KEY['tweet_sending'],
                       mutex_lock_opts,
                       (err, lock) => {
 
                         try {
-                        log.debug(`Locked processing_mutex.`);
-                        if (err) {
-                          log.error(`Error in lock call: ${err}.`);
-                          handleError(err);
-                        }
+                          log.debug(`Locked processing_mutex.`);
+                          if (err) {
+                            log.error(`Error in lock call: ${err}.`);
+                            handleError(err);
+                          }
 
                           log.debug(`Locked processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}.`);
 
@@ -1333,12 +1339,13 @@ function processReportItemRecords(): Promise<void> {
                         );
 
                         // Build a fake tweet for the request report_item
-                        let user: ITwitterUser = {} as ITwitterUser;
-                        user.screen_name = report_item.tweet_user_screen_name;
-                        user.id = parseInt(report_item.tweet_user_id, 10);
-                        user.id_str = report_item.tweet_user_id_str;
+                        const user: ITwitterUser = {
+                          screen_name: report_item.tweet_user_screen_name,
+                          id: parseInt(report_item.tweet_user_id, 10),
+                          id_str: report_item.tweet_user_id_str
+                        } as ITwitterUser;
 
-                        let origTweet: ITweet = {
+                        const orig_tweet: ITweet = {
                           id: report_item.tweet_id,
                           id_str: report_item.tweet_id_str,
                           user: user
@@ -1348,11 +1355,11 @@ function processReportItemRecords(): Promise<void> {
                           `Posting ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} in ${region_name} region.`
                         );
                           
-                        log.info(`About to call SendTweets`);
+                        log.info(`About to call SendTweets with orig_tweet: ${DumpObject(orig_tweet)}.`);
 
                         SendTweets(
                           region_name,
-                          origTweet,
+                          orig_tweet,
                           reportItemsByRequest[request_id][region_name].map(
                             ({ tweet_text }) => tweet_text
                           )
@@ -1388,51 +1395,51 @@ function processReportItemRecords(): Promise<void> {
                           })
                           .catch((err: Error) => {
                             log.info(`We got an error.`);
-                            if (err.name === 'DuplicateError' && 
-                                (
+                            if (err.name === 'DuplicateError') {
+                              if (
                                   !report_item.hasOwnProperty('tweet_retry_count') || 
-                                  report_item.tweet_retry_count < 20
-                                )
-                            ) {
-                              log.info(`We made it into the if statement.`);
-                              // This means Twitter detected a tweet as a duplicate in a way
-                              // that we can retry sending this thread of tweets later.
-                              reportItemsToRetry = reportItemsToRetry.concat(reportItemsByRequest[request_id][region_name]);
-                              log.info(`We made it past concat.`);
-                              reportItemsByRequest[request_id][region_name] = [];
-                              log.info(`We reset the reportItemsByRequest.`);
+                                  (CompareNumericStrings(report_item.tweet_retry_count, "20") < 0)
+                                ) {
+                                log.info(`Duplicate tweet attempt that can be retried.`);
+                                // This means Twitter detected a tweet as a duplicate in a way
+                                // that we can retry sending this thread of tweets later.
+                                report_item_records_to_retry = report_item_records_to_retry.concat(reportItemsByRequest[request_id][region_name]);
+                                log.info(`We made it past concat.`);
+                                reportItemsByRequest[request_id][region_name] = [];
+                                log.info(`We reset the reportItemsByRequest.`);
 
-                              log.debug(`Resolving request_promise as retry for request ${request_id} region ${region_name}`);
-                              resolve();
-
-                              return;
+                                log.debug(`Resolving request_promise as retry for request ${request_id} region ${region_name}`);
+                                resolve();
+                              } else {
+                                log.error(`Tweets for request ${request_id} region ${region_name} were retried the max number of times. Pretending they succeeded.`);
+                                resolve();
+                              }
                             } else {
                               log.info(`We did not make it into the if statement.`);
                               log.error(`Real error in SendTweets`);
-                              reject();
+                              reject(err);
                             }
+                          }).finally( () => {
+                            log.info('In finally block around SendTweets.');
                           });
                           
                           log.info(`Finished making call to SendTweets.`);
-                        } catch (err) {
-                          log.info(`In catch block.`);
-                          handleError(err);
+                        } catch( err ) {
+                          log.info(`processReportItemRecords: Exception occurred for request ${request_id} region ${region_name}. err: ${err}`);
+                          reject(err);
                         } finally {
                           log.info(`In 2nd level finally block within request promise.`);
 
 
-                          log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} on error for request ${request_id} region ${region_name}...`);
-                          processing_mutex.unlock(lock);
-                          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} on error for request ${request_id} region ${region_name}.`);
+                          if (lock) {
+                            log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in finally for request ${request_id} region ${region_name}...`);
+                            processing_mutex.unlock(lock);
+                            log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} in finally for request ${request_id} region ${region_name}.`);
+                          } else {
+                            log.info(`Not unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} on error for request ${request_id} region ${region_name} because lock was not successful.`)
+                          }
                         }
                       });
-                  } finally {
-                    log.info(`In finally block for outermost try/finally within request promise.`);
-                  }
-                  }).catch( (err) => {
-                    log.info(`In catch block for request_promise.`);
-                  }).finally( () => {
-                    log.info(`In finally block for request promise.`);
                   })
                 );
               });
@@ -1447,20 +1454,26 @@ function processReportItemRecords(): Promise<void> {
               log.info(`In Promise.all.then`)
               if (request_promises.length > 0) {
                 // Report how many tweets we sent for each region.
-                let msg: string = 'Tweets sent:';
-
+                let msg: string = '';
+                let total_tweets_sent: number = 0;
+                
                 Object.keys(tweetCountByRequest).forEach(request_id => {
                   Object.keys(tweetCountByRequest[request_id]).forEach(
                     region_name => {
+                      total_tweets_sent += tweetCountByRequest[request_id][region_name];
+                      
                       msg += `\n - ${tweetCountByRequest[request_id][region_name]} tweets for request ${request_id} ${reportItemsByRequest[request_id][region_name][0].license} in ${region_name} region for ${reportItemsByRequest[request_id][region_name].length} report items`;
                     }
                   );
                 });
+                
+                msg = `${total_tweets_sent == 0 ? 'Zero' : total_tweets_sent} tweets sent for ${report_items.length} report item records${total_tweets_sent == 0 ? '.' : ': '}.` +
+                  msg;
 
                 log.info(msg);
               }
 
-              // Set the processing status of all the report_items
+              // Set the processing status of all the report_items successfully tweeted
               var now = Date.now();
               var report_item_records: Array<object> = [];
 
@@ -1479,7 +1492,7 @@ function processReportItemRecords(): Promise<void> {
                         
                         if (!report_item.hasOwnProperty('tweet_retry_count') ||
                            !report_item.tweet_retry_count) {
-                          report_item.tweet_retry_count = 0;
+                          report_item.tweet_retry_count = "1";
                         }
 
                         report_item_records.push({
@@ -1495,20 +1508,25 @@ function processReportItemRecords(): Promise<void> {
             
               let updated_record_count = report_item_records.length;
             
-              reportItemsToRetry.forEach( (report_item) => {
+              // Bump the retry count on all the records that were failed but can be retried.
+              report_item_records_to_retry.forEach( (report_item) => {
                 if (report_item.hasOwnProperty("tweet_retry_count")) {
-                  report_item.tweet_retry_count = report_item.tweet_retry_count + 1;
+                  report_item.tweet_retry_count = (parseInt(report_item.tweet_retry_count, 10) + 1).toString();
                 } else {
-                  report_item.tweet_retry_count = 1;
+                  report_item.tweet_retry_count = "1";
                 }
                 
                 report_item.modified = now;
+
+                report_item_records.push({
+                  PutRequest: {
+                    Item: report_item
+                  }
+                });
               });
             
-              report_item_records = report_item_records.concat(reportItemsToRetry);
+              let batch_write_promises: Array<Promise<void>> = [];
             
-              //log.info(TypeCheckObject(report_item_records[0] as IReportItemRecord));
-
               batchWriteWithExponentialBackoff(
                 new AWS.DynamoDB.DocumentClient(),
                 tableNames['ReportItems'],
@@ -1518,7 +1536,7 @@ function processReportItemRecords(): Promise<void> {
                   // This is the one and only success point for these report item records.
                   // Every other codepath is an error of some kind.
                   log.debug(
-                    `Updated ${updated_record_count} report items to PROCESSED and ${reportItemsToRetry.length} to RETRY for all regions.`
+                    `Updated ${updated_record_count} report items to PROCESSED and ${report_item_records_to_retry.length} to RETRY for all regions.`
                   );
 
                   // Tweets for all the requests completed successfully and report item records updated.
@@ -1527,12 +1545,12 @@ function processReportItemRecords(): Promise<void> {
                 })
                 .catch((err: Error) => {
                   log.info(`In catch 2`);
-                  handleError(err);
+                  reject(err);
                 });
             })
             .catch((err: Error) => {
               log.info(`In Promise.all.catch`)
-              handleError(err);
+              reject(err);
             });
         } else {
           log.info('No report items found for any region.');
@@ -1541,7 +1559,7 @@ function processReportItemRecords(): Promise<void> {
       })
       .catch((err: Error) => {
         log.info(`In catch 3`);
-        handleError(err);
+        reject(err);
       });
   });
 }
@@ -1719,7 +1737,7 @@ function GetQueryCount(
         params,
         (err: Error, result: AWS.DynamoDB.Types.QueryOutput) => {
           if (err) {
-            handleError(err);
+            reject(err);
           }
 
           let query_count: number = result.Count;
@@ -1837,7 +1855,7 @@ function GetRequestRecords(): Promise<Array<IRequestRecord>> {
     //    request together. This is required cause we tweet out summaries/totals.
     docClient.query(params, async function(err, result) {
       if (err) {
-        handleError(err);
+        reject(err);
       } else {
         request_records = result.Items as Array<IRequestRecord>;
       }
@@ -1912,7 +1930,7 @@ function GetCitationRecords(): Promise<Array<ICitationRecord>> {
             //       I'm sure some gasshole will eventually prove us overly optimistic.
             await docClient.query(params, (err: Error, result) => {
               if (err) {
-                handleError(err);
+                reject(err);
               } else {
                 // TODO: There must be a type-safe way to do this...
                 let citation_records_batch: any = result.Items;
