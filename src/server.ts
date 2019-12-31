@@ -34,7 +34,7 @@ import { StatesAndProvinces, formatPlate } from './interfaces';
 import { GetHowsMyDrivingId } from './interfaces';
 import { ReportItemRecord } from './interfaces';
 
-import { getUnusedPort } from './util/process';
+import { getAppRootPath, getUnusedPort } from './util/process';
 
 // legacy commonjs modules
 const express = require('express'),
@@ -48,9 +48,18 @@ const express = require('express'),
 var localStorage = new LocalStorage('./.localstore');
 const next_unique_number = consecutive();
 
-// packpath.self() does not seem to work for a top-level app.
-// Just use packpath.parent{} which is /app.
-const package_json_path = path.join(packpath.parent(), '/package.json');
+let packpath_parent = packpath.parent() ? packpath.parent() : packpath.self();
+let packpath_self = packpath.self();
+
+let package_json_path = path.resolve(__dirname + '/../package.json');
+
+if (!fs.existsSync(package_json_path)) {
+  package_json_path = path.resolve(__dirname + '/../../package.json');
+
+  if (!fs.existsSync(package_json_path)) {
+    throw new Error(`Cannot find package.json: ${__dirname}.`);
+  }
+}
 
 let pjson = require(package_json_path);
 
@@ -61,7 +70,7 @@ import { log, lastdmLog, lastmentionLog } from './logging';
 const redis_port: number = getUnusedPort();
 const redis_srv = new redis_server({
   port: redis_port,
-  bin: path.join(packpath.parent(), '/.data/redis-server')
+  bin: path.join(getAppRootPath(), '/.data/redis-server')
 });
 
 const PROCESS_EXIT_CODES = {
@@ -571,7 +580,6 @@ app.all('/dumpfile', (request: Request, response: Response) => {
 });
 
 app.all('/dumptweet', (request: Request, response: Response) => {
-  console.log('dumptweet');
   try {
     if (request.query.hasOwnProperty('id')) {
       GetTweetById(request.query.id).then( (tweet) => {
