@@ -1385,11 +1385,16 @@ function processReportItemRecords(): Promise<void> {
                               tweetCountByRequest[report_item.request_id][
                                 report_item.region
                               ] += tweets_sent_count;
-
-                              log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
-                              processing_mutex.unlock(lock);
-
-                              resolve();
+                            
+                              UpdateReportItemRecords(reportItemsByRequest[request_id][region_name], 'PROCESSED')
+                                .then( () => {
+                                  resolve();
+                                }).catch ( (err) => {
+                                  reject(err);
+                                }).finally( () => {
+                                  log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
+                                  processing_mutex.unlock(lock);
+                                });
                             })
                             .catch((err: Error) => {
                               if (err.name === 'DuplicateError') {
@@ -1404,12 +1409,27 @@ function processReportItemRecords(): Promise<void> {
                                   report_item_records_to_retry = report_item_records_to_retry.concat(reportItemsByRequest[request_id][region_name]);
                                   reportItemsByRequest[request_id][region_name] = [];
 
-                                  log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on retry ${request_id} region ${region_name}...`);
-                                  processing_mutex.unlock(lock);
-
-                                  resolve();
+                                  UpdateReportItemRecords(reportItemsByRequest[request_id][region_name], 'RETRY')
+                                    .then( () => {
+                                      resolve();
+                                    }).catch ( (err) => {
+                                      reject(err);
+                                    }).finally( () => {
+                                      log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
+                                      processing_mutex.unlock(lock);
+                                    });
                                 } else {
                                   log.warn(`Tweets for request ${request_id} region ${region_name} were retried the max number of times. Pretending they succeeded.`);
+
+                                  UpdateReportItemRecords(reportItemsByRequest[request_id][region_name], 'PROCESSED')
+                                    .then( () => {
+                                      resolve();
+                                    }).catch ( (err) => {
+                                      reject(err);
+                                    }).finally( () => {
+                                      log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
+                                      processing_mutex.unlock(lock);
+                                    });
 
                                   log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}...`);
                                   processing_mutex.unlock(lock);
@@ -1437,13 +1457,12 @@ function processReportItemRecords(): Promise<void> {
           });
 
           log.debug(
-            `Waiting for ${request_promises.length} region plugin processes for all regions.`
+            `Waiting for ${request_promises.length} region plugin processes to complete...`
           );
 
           Promise.all(request_promises)
             .then(() => {
               if (request_promises.length > 0) {
-                log.debug(`Updating report item records...`);
                 // Report how many tweets we sent for each region.
                 let msg: string = '';
                 let total_tweets_sent: number = 0;
@@ -1466,84 +1485,7 @@ function processReportItemRecords(): Promise<void> {
                 log.info(`No tweets were sent. No report item records need updating.`);
               }
 
-              // Set the processing status of all the report_items successfully tweeted
-              var now = Date.now();
-              var report_item_records: Array<object> = [];
-
-              Object.keys(reportItemsByRequest).forEach(request_id => {
-                Object.keys(reportItemsByRequest[request_id]).forEach(
-                  region_name => {
-                    // Now that the record is PROCESSED, TTL is 30 days
-                    var ttl_expire: number =
-                      new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
-
-                    reportItemsByRequest[request_id][region_name].forEach(
-                      report_item => {
-                        report_item.processing_status = 'PROCESSED';
-                        report_item.modified = now;
-                        report_item.ttl_expire = ttl_expire;
-                        
-                        if (!report_item.hasOwnProperty('tweet_retry_count') ||
-                           !report_item.tweet_retry_count) {
-                          report_item.tweet_retry_count = "1";
-                        }
-
-                        report_item_records.push({
-                          PutRequest: {
-                            Item: report_item
-                          }
-                        });
-                      }
-                    );
-                  }
-                );
-              });
-            
-              let updated_record_count = report_item_records.length;
-            
-              // Bump the retry count on all the records that were failed but can be retried.
-              report_item_records_to_retry.forEach( (report_item) => {
-                if (report_item.hasOwnProperty("tweet_retry_count")) {
-                  report_item.tweet_retry_count = (parseInt(report_item.tweet_retry_count, 10) + 1).toString();
-                } else {
-                  report_item.tweet_retry_count = "1";
-                }
-                
-                report_item.modified = now;
-
-                report_item_records.push({
-                  PutRequest: {
-                    Item: report_item
-                  }
-                });
-              });
-            
-              let batch_write_promises: Array<Promise<void>> = [];
-            
-              if (report_item_records.length > 0) {
-                batchWriteWithExponentialBackoff(
-                  new AWS.DynamoDB.DocumentClient(),
-                  tableNames['ReportItems'],
-                  report_item_records
-                )
-                  .then(() => {
-                    // This is the one and only success point for these report item records.
-                    // Every other codepath is an error of some kind.
-                    log.debug(
-                      `Updated ${updated_record_count} report items to PROCESSED and ${report_item_records_to_retry.length} to RETRY for all regions.`
-                    );
-
-                    // Tweets for all the requests completed successfully and report item records updated.
-                    resolve();
-                  })
-                  .catch((err: Error) => {
-                    reject(err);
-                  });
-              }
-              else {
-                log.debug(`No report item records to update. Report item processing complete.`);
-                resolve();
-              }
+              resolve();
             })
             .catch((err: Error) => {
               reject(err);
@@ -2056,6 +1998,73 @@ function WriteReportItemRecords(
     tableNames['ReportItems'],
     report_item_records
   );
+}
+
+function UpdateReportItemRecords(report_items: Array<IReportItemRecord>, status: string): Promise<void> {
+  return new Promise<void>( (resolve, reject) => {
+    var now = Date.now();
+    let report_item_records: Array<any> = [];
+
+    report_items.forEach( (report_item) => {
+      if (status === 'PROCESSED') {
+        // Now that the record is PROCESSED, TTL is 30 days
+        var ttl_expire: number =
+          new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
+
+        report_item.processing_status = 'PROCESSED';
+        report_item.modified = now;
+        report_item.ttl_expire = ttl_expire;
+
+        if (!report_item.hasOwnProperty('tweet_retry_count') ||
+           !report_item.tweet_retry_count) {
+          report_item.tweet_retry_count = "1";
+        }
+
+        report_item_records.push({
+          PutRequest: {
+            Item: report_item
+          }
+        });
+      } else if (status == 'RETRY') {
+        if (report_item.hasOwnProperty("tweet_retry_count")) {
+          report_item.tweet_retry_count = (parseInt(report_item.tweet_retry_count, 10) + 1).toString();
+        } else {
+          report_item.tweet_retry_count = "1";
+        }
+
+        report_item.modified = now;
+
+        report_item_records.push({
+          PutRequest: {
+            Item: report_item
+          }
+        });
+      }
+    });
+
+    if (report_item_records.length > 0) {
+      batchWriteWithExponentialBackoff(
+        new AWS.DynamoDB.DocumentClient(),
+        tableNames['ReportItems'],
+        report_item_records
+      )
+        .then(() => {
+          // This is the one and only success point for these report item records.
+          // Every other codepath is an error of some kind.
+          log.debug(
+            `Updated ${report_item_records.length} report items to ${status} for all ${report_items[0].request_id} region ${report_items[0].region}.`
+          );
+
+          // Tweets for all the requests completed successfully and report item records updated.
+          resolve();
+        })
+        .catch((err: Error) => {
+          reject(err);
+        });
+    } else {
+      log.debug(`No report items to update.`);
+    }
+  });
 }
 
 export function TypeCheckObject(o: IReportItemRecord, indent: number = 0): string {
