@@ -14,7 +14,7 @@
     "dynamo-batchwrite-queue": "^1.0.1",
     "express": "^4.14.0",
     "find-port-free-sync": "^1.0.1",
-    "howsmydriving-dummy": "^0.1.60",
+    "howsmydriving-dummy": "^0.1.61",
     "howsmydriving-seattle": "^0.1.59",
     "howsmydriving-twitter": "^0.1.86",
     "howsmydriving-utils": "^0.1.122",
