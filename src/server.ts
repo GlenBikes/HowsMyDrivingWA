@@ -108,22 +108,22 @@ redis_srv
   .on('open', () => {
     log.debug(`redis_srv started on port ${redis_port}. Creating mutex...`);
     processing_mutex = mutex( {id: uuid.v1(), strategy: { name: 'redis', connectionString: `redis://127.0.0.1:${redis_port}`} } );
-    log.debug(`Mutex created.`);
+    log.trace(`Mutex created.`);
   })
   .on('opening', () => {
-    log.debug('redis_srv opening...');
+    log.trace('redis_srv opening...');
   })
   .on('closing', () => {
-    log.debug('redis_srv closing...');
+    log.trace('redis_srv closing...');
   })
   .on('close', () => {
-    log.debug('redis_srv closed.');
+    log.trace('redis_srv closed.');
   });
 
 redis_srv
   .open()
   .then(() => {
-    log.debug(`redis_srv open completed.`);
+    log.trace(`redis_srv open completed.`);
   })
   .catch((err: Error) => {
     handleError(err);
@@ -269,7 +269,7 @@ app.all('/tweet', function(request: Request, response: Response) {
 
   var tweet_promises = [];
 
-  log.debug(`Locking processing_mutex for ${MUTEX_KEY['tweet_processing']}...`);
+  log.trace(`Locking processing_mutex for ${MUTEX_KEY['tweet_processing']}...`);
 
   processing_mutex.lock(
     MUTEX_KEY['tweet_processing'],
@@ -280,7 +280,7 @@ app.all('/tweet', function(request: Request, response: Response) {
       }
 
       try {
-        log.debug(`Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`);
+        log.trace(`Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`);
 
         var twitter_promises: Array<Promise<IGetTweetsResponse>> = [];
 
@@ -307,14 +307,14 @@ app.all('/tweet', function(request: Request, response: Response) {
 
                   log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`);
                   processing_mutex.unlock(lock);
-                  log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on success.`);
+                  log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on success.`);
 
                   response.sendStatus(200);
                 })
                 .catch(err => {
                   log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
                   processing_mutex.unlock(lock);
-                  log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
+                  log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
 
                   handleError(err);
                 });
@@ -326,7 +326,7 @@ app.all('/tweet', function(request: Request, response: Response) {
       } catch (err) {
         log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
         processing_mutex.unlock(lock);
-        log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
+        log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
         response.status(500).send(err);
       }
     }
@@ -335,7 +335,7 @@ app.all('/tweet', function(request: Request, response: Response) {
 
 // uptimerobot.com hits this every 5 minutes
 app.all('/processrequests', (request: Request, response: Response) => {
-  log.debug(`Locking processing_mutex for ${MUTEX_KEY['request_processing']}...`);
+  log.trace(`Locking processing_mutex for ${MUTEX_KEY['request_processing']}...`);
 
   processing_mutex.lock(
     MUTEX_KEY['request_processing'],
@@ -353,14 +353,14 @@ app.all('/processrequests', (request: Request, response: Response) => {
 
           log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on success...`);
           processing_mutex.unlock(lock);
-          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['request_processing']} on success.`);
+          log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['request_processing']} on success.`);
 
           response.sendStatus(200);
         })
         .catch((err: Error) => {
           log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on error...`);
           processing_mutex.unlock(lock);
-          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['request_processing']} on error.`);
+          log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['request_processing']} on error.`);
 
           response.status(500).send(err);
         });
@@ -369,7 +369,7 @@ app.all('/processrequests', (request: Request, response: Response) => {
 });
 
 app.all('/processcitations', (request: Request, response: Response) => {
-  log.debug(`Locking processing_mutex for ${MUTEX_KEY['citation_processing']}...`);
+  log.trace(`Locking processing_mutex for ${MUTEX_KEY['citation_processing']}...`);
 
   processing_mutex.lock(
     MUTEX_KEY['citation_processing'],
@@ -387,14 +387,14 @@ app.all('/processcitations', (request: Request, response: Response) => {
 
           log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on success...`);
           processing_mutex.unlock(lock);
-          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['citation_processing']} on success.`);
+          log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['citation_processing']} on success.`);
 
           response.sendStatus(200);
         });
       } catch (err) {
         log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on error...`);
         processing_mutex.unlock(lock);
-        log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['citation_processing']} on error.`);
+        log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['citation_processing']} on error.`);
 
         response.status(500).send(err);
       }
@@ -403,7 +403,7 @@ app.all('/processcitations', (request: Request, response: Response) => {
 });
 
 app.all('/processreportitems', (request: Request, response: Response) => {
-  log.debug(`Locking processing_mutex for ${MUTEX_KEY['report_item_processing']}...`);
+  log.trace(`Locking processing_mutex for ${MUTEX_KEY['report_item_processing']}...`);
 
   try {
   processing_mutex.lock(
@@ -422,7 +422,7 @@ app.all('/processreportitems', (request: Request, response: Response) => {
 
           log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on success...`);
           processing_mutex.unlock(lock);
-          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on success.`);
+          log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on success.`);
 
           response.sendStatus(200);
         })
@@ -431,7 +431,7 @@ app.all('/processreportitems', (request: Request, response: Response) => {
 
           log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`);
           processing_mutex.unlock(lock);
-          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on error.`);
+          log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['report_item_processing']} on error.`);
 
           response.status(500).send(err);
         });
@@ -448,7 +448,7 @@ app.all('/searchtest', function(request: Request, response: Response) {
 
   var tweet_promises = [];
 
-  log.debug(`Locking processing_mutex for ${MUTEX_KEY['tweet_processing']}...`);
+  log.trace(`Locking processing_mutex for ${MUTEX_KEY['tweet_processing']}...`);
 
   processing_mutex.lock(
     MUTEX_KEY['tweet_processing'],
@@ -487,7 +487,7 @@ app.all('/searchtest', function(request: Request, response: Response) {
       } catch (err) {
         log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
         processing_mutex.unlock(lock);
-        log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
+        log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_processing']} on error.`);
         response.status(500).send(err);
       }
     }
@@ -1322,7 +1322,7 @@ function processReportItemRecords(): Promise<void> {
                 
                 request_promises.push( new Promise<void>(
                   (resolve, reject) => {
-                    log.debug(`Locking processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}...`);
+                    log.trace(`Locking processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}...`);
                     
                     processing_mutex.lock(
                       MUTEX_KEY['tweet_sending'],
@@ -1400,7 +1400,7 @@ function processReportItemRecords(): Promise<void> {
 
                             log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
                             processing_mutex.unlock(lock);
-                            log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}.`);
+                            log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}.`);
 
                             resolve();
                           })
@@ -1419,7 +1419,7 @@ function processReportItemRecords(): Promise<void> {
 
                                 log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on retry ${request_id} region ${region_name}...`);
                                 processing_mutex.unlock(lock);
-                                log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on retry ${request_id} region ${region_name}.`);
+                                log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on retry ${request_id} region ${region_name}.`);
 
                                 resolve();
                               } else {
@@ -1427,7 +1427,7 @@ function processReportItemRecords(): Promise<void> {
 
                                 log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}...`);
                                 processing_mutex.unlock(lock);
-                                log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}.`);
+                                log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}.`);
 
                                 resolve();
                               }
@@ -1436,7 +1436,7 @@ function processReportItemRecords(): Promise<void> {
 
                               log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}...`);
                               processing_mutex.unlock(lock);
-                              log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}.`);
+                              log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}.`);
 
                               reject(err);
                             }
@@ -1444,7 +1444,7 @@ function processReportItemRecords(): Promise<void> {
                         } catch( err ) {
                           log.debug(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}...`);
                           processing_mutex.unlock(lock);
-                          log.debug(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}.`);
+                          log.trace(`Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}.`);
 
                           reject(err);
                         } 
