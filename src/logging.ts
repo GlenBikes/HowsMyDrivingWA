@@ -1,35 +1,66 @@
 
 import { sleep } from 'howsmydriving-utils';
 
-import { __MODULE_NAME__ } from './server';
-
-const chokidar = require('chokidar'),
-  path = require('path'),
-  packpath = require('packpath');
-
-let log4js = require('log4js');
+import * as packpath from 'packpath';
+import * as path from 'path';
+import * as fs from 'fs';
 
 let packpath_parent = packpath.parent() ? packpath.parent() : packpath.self();
 let packpath_self = packpath.self();
 
-const config_path = path.resolve(packpath_parent + '/dist/config/log4js.json');
+let package_json_path = path.resolve(__dirname + '/../package.json');
+
+if (!fs.existsSync(package_json_path)) {
+  package_json_path = path.resolve(__dirname + '/../../package.json');
+
+  if (!fs.existsSync(package_json_path)) {
+    throw new Error(`Cannot find package.json: ${__dirname}.`);
+  }
+}
+
+var pjson = require(package_json_path);
+
+// Put this at very top so other modules can import it without taking
+// dependencies on something else in the module being instantiated.
+export const __MODULE_NAME__ = pjson.name;
+export const __MODULE_VERSION__ = pjson.version;
+
+const temp_log4js_config_path = path.resolve(
+  '/app' + '/dist/config/log4js.json'
+);
+
+if (!fs.existsSync(temp_log4js_config_path)) {
+  throw new Error(`Cannot find log4js.json: ${temp_log4js_config_path}.`);
+}
+
+export const log4js_config_path = temp_log4js_config_path;
+
+const chokidar = require('chokidar');
+
+let log4js = require('log4js');
 
 // Load the config.
-log4js.configure(config_path);
+log4js.configure(log4js_config_path);
 
-export let log = log4js.getLogger('result'),
-  lastdmLog = log4js.getLogger('_lastdm'),
-  lastmentionLog = log4js.getLogger('_lastdm');
+let temp_log = log4js.getLogger('result'),
+  temp_lastdmLog = log4js.getLogger('_lastdm'),
+  temp_lastmentionLog = log4js.getLogger('_lastdm');
 
-log.addContext('module', __MODULE_NAME__);
-lastdmLog.addContext('module', __MODULE_NAME__);
-lastmentionLog.addContext('module', __MODULE_NAME__);
+temp_log.addContext('module', __MODULE_NAME__);
+temp_lastdmLog.addContext('module', __MODULE_NAME__);
+temp_lastmentionLog.addContext('module', __MODULE_NAME__);
+temp_log.info(
+  `howsmydrivingwa: Adding log4js (${log4js_config_path}) context: ${__MODULE_NAME__}.`
+);
 
+export const log = temp_log,
+  lastdmLog = temp_lastdmLog,
+  lastmentionLog = temp_lastmentionLog;
 
 /**
  * Monitor the log4js config file and reloading log instances if the file changes.
  **/
-var watcher = chokidar.watch(config_path, {
+var watcher = chokidar.watch(log4js_config_path, {
   ignored: /(^|[\/\\])\../, // ignore dotfiles
   persistent: true,
   awaitWriteFinish: true
