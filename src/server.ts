@@ -26,13 +26,17 @@ import {
 } from 'howsmydriving-twitter';
 
 // interfaces internal to project
-import { IRequestRecord } from './interfaces';
-import { IReportItemRecord } from './interfaces';
-import { ICitationRecord } from './interfaces';
-import { CitationRecord } from './interfaces';
-import { StatesAndProvinces, formatPlate } from './interfaces';
-import { GetHowsMyDrivingId } from './interfaces';
-import { ReportItemRecord } from './interfaces';
+import {
+  IRequestRecord,
+  IReportItemRecord,
+  ICitationRecord,
+  CitationRecord,
+  IStateRecord,
+  StatesAndProvinces,
+  formatPlate,
+  GetHowsMyDrivingId,
+  ReportItemRecord
+} from './interfaces';
 
 import { FormatMilliseconds } from './util/stringutils';
 
@@ -81,7 +85,7 @@ const PROCESS_EXIT_CODES = {
 
 var processing_mutex;
 
-// We lock a mutex when doing any of the processing steps to make sure we never 
+// We lock a mutex when doing any of the processing steps to make sure we never
 // have multiple "threads" concurrently reading tweets/DB and writing DB / tweets.
 // Most of these are relatively fast operations
 const mutex_lock_opts = {
@@ -103,13 +107,19 @@ const mutex_lock_opts = {
 // same tweets over and over forever.
 const mutex_lock_opts_send_tweets = {
   duration: 10 * 60 * 1000, // It could potentially take a long time send a bunch of tweets
-  maxWait: 30 * 60 * 1000   // the more regions we have, the longer the last reghion will have to wait to start sending tweets
+  maxWait: 30 * 60 * 1000 // the more regions we have, the longer the last reghion will have to wait to start sending tweets
 };
 
 redis_srv
   .on('open', () => {
     log.debug(`redis_srv started on port ${redis_port}. Creating mutex...`);
-    processing_mutex = mutex( {id: uuid.v1(), strategy: { name: 'redis', connectionString: `redis://127.0.0.1:${redis_port}`} } );
+    processing_mutex = mutex({
+      id: uuid.v1(),
+      strategy: {
+        name: 'redis',
+        connectionString: `redis://127.0.0.1:${redis_port}`
+      }
+    });
     log.trace(`Mutex created.`);
   })
   .on('opening', () => {
@@ -131,8 +141,9 @@ redis_srv
     handleError(err);
   });
 
-const noCitationsFoundMessage = 'No __REGION_NAME__ citations found for plate #__LICENSE__.',
-  // Included datetime since this tweet is the same all the time and therefore Twitter 
+const noCitationsFoundMessage =
+    'No __REGION_NAME__ citations found for plate #__LICENSE__.',
+  // Included datetime since this tweet is the same all the time and therefore Twitter
   // will prevent it with error code 187 as a duplicate.
   noValidPlate =
     'No valid license found in tweet by @__USER__. Please use XX:YYYYY where XX is two character state/province abbreviation and YYYYY is plate #.',
@@ -152,6 +163,7 @@ const MAX_RECORDS_BATCH = 2000,
       : 5000;
 
 export const tableNames: { [tabletype: string]: string } = {
+  State: `${process.env.DB_PREFIX}_State`,
   Request: `${process.env.DB_PREFIX}_Request`,
   Citations: `${process.env.DB_PREFIX}_Citations`,
   ReportItems: `${process.env.DB_PREFIX}_ReportItems`
@@ -218,12 +230,12 @@ if (!process.env.REGIONS || process.env.REGIONS.split(',').length == 0) {
 // TODO: This needs to be async
 process.env.REGIONS.split(',').forEach(region_package => {
   region_package = region_package.trim();
-  
+
   if (!region_package || region_package.length === 0) {
     log.error(`No regions configured in process.env.REGIONS. Aborting.`);
     process.exit(PROCESS_EXIT_CODES['no-regions']);
   }
-  
+
   log.debug(`Loading package ${region_package}`);
   import_promises.push(
     new Promise<any>((resolve, reject) => {
@@ -257,13 +269,7 @@ Promise.all(import_promises)
 app.all('/tweet', function(request: Request, response: Response) {
   var docClient: any = new AWS.DynamoDB.DocumentClient();
 
-  /* First, let's load the ID of the last tweet we responded to. */
-  var last_mention_id = getLastMentionId();
   var last_dm_id = getLastDmId();
-
-  if (!last_mention_id) {
-    handleError(new Error('ERROR: No last tweet found!'));
-  }
 
   if (!last_dm_id) {
     handleError(new Error('ERROR: No last dm found!'));
@@ -282,49 +288,78 @@ app.all('/tweet', function(request: Request, response: Response) {
       }
 
       try {
-        log.trace(`Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`);
-
-        var twitter_promises: Array<Promise<IGetTweetsResponse>> = [];
-
-        let get_tweets_promise: Promise<IGetTweetsResponse> = GetNewTweets(
-          last_mention_id
+        log.trace(
+          `Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`
         );
 
-        // TODO: Add DM's
-        twitter_promises.push(get_tweets_promise);
+        /* First, let's load the ID of the last tweet we responded to. */
+        getLastMentionId()
+          .then(last_mention_id => {
+            if (!last_mention_id) {
+              handleError(new Error('ERROR: No last tweet found!'));
+            }
 
-        // Now wait until processing of both tweets and dms is done.
-        get_tweets_promise
-          .then( ( resp ) => {
-              processTweets(resp.tweets, docClient)
-                .then(requests_written => {
-                  if (resp.tweets.length == 0) {
-                    log.info(`No new mentions found.`);
-                  }
-                  else {
-                    log.debug(`Finished processing tweets.`);
-                  }
-                  
-                  setLastMentionId(resp.last_tweet_read_id);
+            var twitter_promises: Array<Promise<IGetTweetsResponse>> = [];
 
-                  log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`);
-                  processing_mutex.unlock(lock);
+            let get_tweets_promise: Promise<IGetTweetsResponse> = GetNewTweets(
+              last_mention_id
+            );
 
-                  response.sendStatus(200);
-                })
-                .catch(err => {
-                  log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
-                  processing_mutex.unlock(lock);
+            // TODO: Add DM's
+            twitter_promises.push(get_tweets_promise);
 
-                  handleError(err);
-                });
-            // TODO do the same for DM promise
+            // Now wait until processing of both tweets and dms is done.
+            get_tweets_promise
+              .then(resp => {
+                processTweets(resp.tweets, docClient)
+                  .then(requests_written => {
+                    if (resp.tweets.length == 0) {
+                      log.info(`No new mentions found.`);
+
+                      log.trace(
+                        `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`
+                      );
+                      processing_mutex.unlock(lock);
+
+                      response.sendStatus(200);
+                    } else {
+                      log.debug(`Finished processing tweets.`);
+
+                      setLastMentionId(resp.last_tweet_read_id)
+                        .then(() => {
+                          log.trace(
+                            `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`
+                          );
+                          processing_mutex.unlock(lock);
+
+                          response.sendStatus(200);
+                        })
+                        .catch(err => {
+                          handleError(err);
+                        });
+                    }
+                  })
+                  .catch(err => {
+                    log.trace(
+                      `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`
+                    );
+                    processing_mutex.unlock(lock);
+
+                    handleError(err);
+                  });
+                // TODO do the same for DM promise
+              })
+              .catch((err: Error) => {
+                handleError(err);
+              });
           })
-          .catch((err: Error) => {
+          .catch(err => {
             handleError(err);
           });
       } catch (err) {
-        log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`
+        );
         processing_mutex.unlock(lock);
 
         response.status(500).send(err);
@@ -335,7 +370,9 @@ app.all('/tweet', function(request: Request, response: Response) {
 
 // uptimerobot.com hits this every 5 minutes
 app.all('/processrequests', (request: Request, response: Response) => {
-  log.trace(`Locking processing_mutex for ${MUTEX_KEY['request_processing']}...`);
+  log.trace(
+    `Locking processing_mutex for ${MUTEX_KEY['request_processing']}...`
+  );
 
   processing_mutex.lock(
     MUTEX_KEY['request_processing'],
@@ -345,19 +382,25 @@ app.all('/processrequests', (request: Request, response: Response) => {
         handleError(err);
       }
 
-      log.trace(`Locked processing_mutex for ${MUTEX_KEY['request_processing']}.`);
+      log.trace(
+        `Locked processing_mutex for ${MUTEX_KEY['request_processing']}.`
+      );
 
       processRequestRecords()
         .then(() => {
           log.info(`Finished processing requests.`);
 
-          log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on success...`);
+          log.trace(
+            `Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on success...`
+          );
           processing_mutex.unlock(lock);
 
           response.sendStatus(200);
         })
         .catch((err: Error) => {
-          log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on error...`);
+          log.trace(
+            `Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on error...`
+          );
           processing_mutex.unlock(lock);
 
           response.status(500).send(err);
@@ -367,7 +410,9 @@ app.all('/processrequests', (request: Request, response: Response) => {
 });
 
 app.all('/processcitations', (request: Request, response: Response) => {
-  log.trace(`Locking processing_mutex for ${MUTEX_KEY['citation_processing']}...`);
+  log.trace(
+    `Locking processing_mutex for ${MUTEX_KEY['citation_processing']}...`
+  );
 
   processing_mutex.lock(
     MUTEX_KEY['citation_processing'],
@@ -378,18 +423,24 @@ app.all('/processcitations', (request: Request, response: Response) => {
       }
 
       try {
-        log.trace(`Locked processing_mutex for ${MUTEX_KEY['citation_processing']}.`);
+        log.trace(
+          `Locked processing_mutex for ${MUTEX_KEY['citation_processing']}.`
+        );
 
         processCitationRecords().then(() => {
           log.info(`Finished processing citations.`);
 
-          log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on success...`);
+          log.trace(
+            `Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on success...`
+          );
           processing_mutex.unlock(lock);
 
           response.sendStatus(200);
         });
       } catch (err) {
-        log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on error...`);
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on error...`
+        );
         processing_mutex.unlock(lock);
 
         response.status(500).send(err);
@@ -399,40 +450,51 @@ app.all('/processcitations', (request: Request, response: Response) => {
 });
 
 app.all('/processreportitems', (request: Request, response: Response) => {
-  log.trace(`Locking processing_mutex for ${MUTEX_KEY['report_item_processing']}...`);
+  log.trace(
+    `Locking processing_mutex for ${MUTEX_KEY['report_item_processing']}...`
+  );
 
   try {
-  processing_mutex.lock(
-    MUTEX_KEY['report_item_processing'],
-    mutex_lock_opts,
-    (err, lock) => {
-      if (err) {
-        handleError(err);
+    processing_mutex.lock(
+      MUTEX_KEY['report_item_processing'],
+      mutex_lock_opts,
+      (err, lock) => {
+        if (err) {
+          handleError(err);
+        }
+
+        log.trace(
+          `Locked processing_mutex for ${MUTEX_KEY['report_item_processing']}.`
+        );
+
+        processReportItemRecords()
+          .then(() => {
+            log.info(`Finished processing report items.`);
+
+            log.trace(
+              `Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on success...`
+            );
+            processing_mutex.unlock(lock);
+
+            response.sendStatus(200);
+          })
+          .catch(err => {
+            log.info(`Error processing report item records: ${err}.`);
+
+            log.trace(
+              `Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`
+            );
+            processing_mutex.unlock(lock);
+
+            response.status(500).send(err);
+          });
       }
-
-      log.trace(`Locked processing_mutex for ${MUTEX_KEY['report_item_processing']}.`);
-
-      processReportItemRecords()
-        .then(() => {
-          log.info(`Finished processing report items.`);
-
-          log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on success...`);
-          processing_mutex.unlock(lock);
-
-          response.sendStatus(200);
-        })
-        .catch( (err) => {
-          log.info(`Error processing report item records: ${err}.`);
-
-          log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`);
-          processing_mutex.unlock(lock);
-
-          response.status(500).send(err);
-        });
-    });
+    );
   } catch (err) {
-    log.error(`Exception locking mutex before processing report item records: ${err}.`);
-    
+    log.error(
+      `Exception locking mutex before processing report item records: ${err}.`
+    );
+
     response.status(500).send(err);
   }
 });
@@ -453,7 +515,9 @@ app.all('/searchtest', function(request: Request, response: Response) {
       }
 
       try {
-        log.trace(`Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`);
+        log.trace(
+          `Locked processing_mutex for ${MUTEX_KEY['tweet_processing']}.`
+        );
 
         if (!request.query.hasOwnProperty('since_id')) {
           handleError(new Error('Error: since_id is required for /searchtest'));
@@ -479,7 +543,9 @@ app.all('/searchtest', function(request: Request, response: Response) {
             handleError(err);
           });
       } catch (err) {
-        log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`);
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`
+        );
         processing_mutex.unlock(lock);
         response.status(500).send(err);
       }
@@ -575,7 +641,7 @@ app.all('/dumpfile', (request: Request, response: Response) => {
 app.all('/dumptweet', (request: Request, response: Response) => {
   try {
     if (request.query.hasOwnProperty('id')) {
-      GetTweetById(request.query.id).then( (tweet) => {
+      GetTweetById(request.query.id).then(tweet => {
         response.set('Cache-Control', 'no-store');
         response.json(tweet);
       });
@@ -897,66 +963,71 @@ function processRequestRecords(): Promise<void> {
                   new AWS.DynamoDB.DocumentClient(),
                   tableNames['Citations'],
                   citation_records
-                ).then(() => {
-                  let total_citations: number = 0;
-                  let msg: string = '';
+                )
+                  .then(() => {
+                    let total_citations: number = 0;
+                    let msg: string = '';
 
-                  Object.keys(citations_written).forEach(request_id => {
-                    Object.keys(citations_written[request_id]).forEach(
-                      region_name => {
-                        if (region_name === 'Invalid Plate') {
-                          msg += `\n  1 citations for request ${request_id} invalid plate in Global region.`;
-                          total_citations += 1;
-                        } else {
-                          msg += `\n  ${citations_written[request_id][region_name]} citations for request ${request_id} ${licenses[request_id]} in ${region_name} region.`;
-                          total_citations += citations_written[request_id][region_name];
+                    Object.keys(citations_written).forEach(request_id => {
+                      Object.keys(citations_written[request_id]).forEach(
+                        region_name => {
+                          if (region_name === 'Invalid Plate') {
+                            msg += `\n  1 citations for request ${request_id} invalid plate in Global region.`;
+                            total_citations += 1;
+                          } else {
+                            msg += `\n  ${citations_written[request_id][region_name]} citations for request ${request_id} ${licenses[request_id]} in ${region_name} region.`;
+                            total_citations +=
+                              citations_written[request_id][region_name];
+                          }
                         }
-                      }
-                    );
-                  });
-
-                  msg = `Finished writing ${total_citations} citation records:` + msg
-                  log.info(msg);
-
-                  var request_update_records: Array<any> = [];
-                  var now = Date.now();
-                  // Now that the record is PROCESSED, TTL is 30 days
-                  var ttl_expire: number =
-                    new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
-
-                  request_records.forEach(request_record => {
-                    request_record.processing_status = 'PROCESSED';
-                    request_record.modified = now;
-                    request_record.ttl_expire = ttl_expire;
-
-                    request_update_records.push({
-                      PutRequest: {
-                        Item: request_record
-                      }
-                    });
-                  });
-
-                  batchWriteWithExponentialBackoff(
-                    new AWS.DynamoDB.DocumentClient(),
-                    tableNames['Request'],
-                    request_update_records
-                  )
-                    .then(() => {
-                      // This is the one success point for this request.
-                      // All other codepaths indicate a failure.
-                      log.debug(
-                        `Set ${request_update_records.length} request records to PROCESSED.`
                       );
-
-                      // resolve the main promise returned from this function
-                      resolve();
-                    })
-                    .catch((err: Error) => {
-                      handleError(err);
                     });
-                }).catch( (err: Error) => {
-                  handleError(err);
-                });
+
+                    msg =
+                      `Finished writing ${total_citations} citation records:` +
+                      msg;
+                    log.info(msg);
+
+                    var request_update_records: Array<any> = [];
+                    var now = Date.now();
+                    // Now that the record is PROCESSED, TTL is 30 days
+                    var ttl_expire: number =
+                      new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
+
+                    request_records.forEach(request_record => {
+                      request_record.processing_status = 'PROCESSED';
+                      request_record.modified = now;
+                      request_record.ttl_expire = ttl_expire;
+
+                      request_update_records.push({
+                        PutRequest: {
+                          Item: request_record
+                        }
+                      });
+                    });
+
+                    batchWriteWithExponentialBackoff(
+                      new AWS.DynamoDB.DocumentClient(),
+                      tableNames['Request'],
+                      request_update_records
+                    )
+                      .then(() => {
+                        // This is the one success point for this request.
+                        // All other codepaths indicate a failure.
+                        log.debug(
+                          `Set ${request_update_records.length} request records to PROCESSED.`
+                        );
+
+                        // resolve the main promise returned from this function
+                        resolve();
+                      })
+                      .catch((err: Error) => {
+                        handleError(err);
+                      });
+                  })
+                  .catch((err: Error) => {
+                    handleError(err);
+                  });
               } else {
                 log.debug(`No citation records need to be updated.`);
               }
@@ -1137,12 +1208,20 @@ function processCitationRecords(): Promise<void> {
               );
 
               Object.keys(citationsByRequest).forEach(request_id => {
-                Object.keys(report_items_by_request[request_id]).forEach(region_name => {
-                  if (report_items_by_request[request_id][region_name])
-                  log.info(
-                    ` - ${report_items_by_request[request_id][region_name]} for request ${request_id} license ${licenseByRequest[request_id] === ':' ? 'invalid license' : licenseByRequest[request_id]} for ${region_name} region`
-                  );
-                });
+                Object.keys(report_items_by_request[request_id]).forEach(
+                  region_name => {
+                    if (report_items_by_request[request_id][region_name])
+                      log.info(
+                        ` - ${
+                          report_items_by_request[request_id][region_name]
+                        } for request ${request_id} license ${
+                          licenseByRequest[request_id] === ':'
+                            ? 'invalid license'
+                            : licenseByRequest[request_id]
+                        } for ${region_name} region`
+                      );
+                  }
+                );
               });
 
               WriteReportItemRecords(
@@ -1171,7 +1250,9 @@ function processCitationRecords(): Promise<void> {
                             citationsByRequest[request_id][region_name]
                           ).length
                         } citation records for request ${request_id} ${
-                          licenseByRequest[request_id] === ':' ? 'invalid license' : licenseByRequest[request_id]
+                          licenseByRequest[request_id] === ':'
+                            ? 'invalid license'
+                            : licenseByRequest[request_id]
                         } in ${region_name} region.`;
 
                         citationsByRequest[request_id][region_name].forEach(
@@ -1300,160 +1381,240 @@ function processReportItemRecords(): Promise<void> {
           // Now process the report_items, on a per-request/region basis
           Object.keys(reportItemsByRequest).forEach((request_id: string) => {
             Object.keys(reportItemsByRequest[request_id]).forEach(
-              (region_name) => {
+              region_name => {
                 // For report items that are retries, only retry them every 4 hours
                 let rep_item = reportItemsByRequest[request_id][region_name][0];
 
-                if (CompareNumericStrings(reportItemsByRequest[request_id][region_name][0].tweet_retry_count, '0') > 0 &&
-                   (now - reportItemsByRequest[request_id][region_name][0].modified) < parseInt(process.env.TWEET_RETRY_DELAY_HOURS)*60*60*1000) {
-                  log.debug(`Skipping report items for request ${request_id} region ${region_name}. Will retry after ${process.env.TWEET_RETRY_DELAY_HOURS}h, last attempt was ${FormatMilliseconds(now - rep_item.modified)} ago.`);
-                  
+                if (
+                  CompareNumericStrings(
+                    reportItemsByRequest[request_id][region_name][0]
+                      .tweet_retry_count,
+                    '0'
+                  ) > 0 &&
+                  now -
+                    reportItemsByRequest[request_id][region_name][0].modified <
+                    parseInt(process.env.TWEET_RETRY_DELAY_HOURS) *
+                      60 *
+                      60 *
+                      1000
+                ) {
+                  log.debug(
+                    `Skipping report items for request ${request_id} region ${region_name}. Will retry after ${
+                      process.env.TWEET_RETRY_DELAY_HOURS
+                    }h, last attempt was ${FormatMilliseconds(
+                      now - rep_item.modified
+                    )} ago.`
+                  );
+
                   reportItemsByRequest[request_id][region_name] = [];
-                }
-                else {
-                  request_promises.push( new Promise<void>(
-                    (resolve, reject) => {
-                      log.trace(`Locking processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}...`);
+                } else {
+                  request_promises.push(
+                    new Promise<void>((resolve, reject) => {
+                      log.trace(
+                        `Locking processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}...`
+                      );
 
                       processing_mutex.lock(
                         MUTEX_KEY['tweet_sending'],
                         mutex_lock_opts,
                         (err, lock) => {
-
                           if (err) {
                             reject(err);
                             return;
                           }
 
                           try {
-                          log.trace(`Locked processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}.`);
+                            log.trace(
+                              `Locked processing_mutex for ${MUTEX_KEY['tweet_sending']} for request ${request_id} region ${region_name}.`
+                            );
 
-                          // Get the first report_item to access report_item columns
-                          var report_item =
-                            reportItemsByRequest[request_id][region_name][0];
+                            // Get the first report_item to access report_item columns
+                            var report_item =
+                              reportItemsByRequest[request_id][region_name][0];
 
-                          log.info(
-                            `Processing ${reportItemsByRequest[request_id][region_name].length} report items for ${region_name} region...`
-                          );
+                            log.info(
+                              `Processing ${reportItemsByRequest[request_id][region_name].length} report items for ${region_name} region...`
+                            );
 
-                          // Build a fake tweet for the request report_item
-                          const user: ITwitterUser = {
-                            screen_name: report_item.tweet_user_screen_name,
-                            id: parseInt(report_item.tweet_user_id, 10),
-                            id_str: report_item.tweet_user_id_str
-                          } as ITwitterUser;
+                            // Build a fake tweet for the request report_item
+                            const user: ITwitterUser = {
+                              screen_name: report_item.tweet_user_screen_name,
+                              id: parseInt(report_item.tweet_user_id, 10),
+                              id_str: report_item.tweet_user_id_str
+                            } as ITwitterUser;
 
-                          const orig_tweet: ITweet = {
-                            id: report_item.tweet_id,
-                            id_str: report_item.tweet_id_str,
-                            user: user
-                          } as ITweet;
+                            const orig_tweet: ITweet = {
+                              id: report_item.tweet_id,
+                              id_str: report_item.tweet_id_str,
+                              user: user
+                            } as ITweet;
 
-                          log.info(
-                            `Posting ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} in ${region_name} region.`
-                          );
+                            log.info(
+                              `Posting ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} in ${region_name} region.`
+                            );
 
-                          SendTweets(
-                            region_name,
-                            orig_tweet,
-                            reportItemsByRequest[request_id][region_name].map(
-                              ({ tweet_text }) => tweet_text
+                            SendTweets(
+                              region_name,
+                              orig_tweet,
+                              reportItemsByRequest[request_id][region_name].map(
+                                ({ tweet_text }) => tweet_text
+                              )
                             )
-                          )
-                            .then(tweets_sent_count => {
-                              log.info(
-                                `Finished sending ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license == ':' ? "'invalid license'" : report_item.license} for ${region_name} region.`
-                              );
+                              .then(tweets_sent_count => {
+                                log.info(
+                                  `Finished sending ${
+                                    reportItemsByRequest[request_id][
+                                      region_name
+                                    ].length
+                                  } tweets for request ${request_id} ${
+                                    report_item.license == ':'
+                                      ? "'invalid license'"
+                                      : report_item.license
+                                  } for ${region_name} region.`
+                                );
 
-                              if (
-                                !(report_item.request_id in tweetCountByRequest)
-                              ) {
-                                tweetCountByRequest[report_item.request_id] = {};
-                              }
+                                if (
+                                  !(
+                                    report_item.request_id in
+                                    tweetCountByRequest
+                                  )
+                                ) {
+                                  tweetCountByRequest[
+                                    report_item.request_id
+                                  ] = {};
+                                }
 
-                              if (
-                                !(
-                                  report_item.region in
-                                  tweetCountByRequest[report_item.request_id]
-                                )
-                              ) {
+                                if (
+                                  !(
+                                    report_item.region in
+                                    tweetCountByRequest[report_item.request_id]
+                                  )
+                                ) {
+                                  tweetCountByRequest[report_item.request_id][
+                                    report_item.region
+                                  ] = 0;
+                                }
+
                                 tweetCountByRequest[report_item.request_id][
                                   report_item.region
-                                ] = 0;
-                              }
+                                ] += tweets_sent_count;
 
-                              tweetCountByRequest[report_item.request_id][
-                                report_item.region
-                              ] += tweets_sent_count;
-                            
-                              UpdateReportItemRecords(reportItemsByRequest[request_id][region_name], 'PROCESSED')
-                                .then( () => {
-                                  resolve();
-                                }).catch ( (err) => {
-                                  reject(err);
-                                }).finally( () => {
-                                  log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
-                                  processing_mutex.unlock(lock);
-                                });
-                            })
-                            .catch((err: Error) => {
-                              if (err.name === 'DuplicateError') {
-                                if (
-                                    !report_item.hasOwnProperty('tweet_retry_count') || 
-                                    (CompareNumericStrings(report_item.tweet_retry_count, "20") < 0)
+                                UpdateReportItemRecords(
+                                  reportItemsByRequest[request_id][region_name],
+                                  'PROCESSED'
+                                )
+                                  .then(() => {
+                                    resolve();
+                                  })
+                                  .catch(err => {
+                                    reject(err);
+                                  })
+                                  .finally(() => {
+                                    log.trace(
+                                      `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`
+                                    );
+                                    processing_mutex.unlock(lock);
+                                  });
+                              })
+                              .catch((err: Error) => {
+                                if (err.name === 'DuplicateError') {
+                                  if (
+                                    !report_item.hasOwnProperty(
+                                      'tweet_retry_count'
+                                    ) ||
+                                    CompareNumericStrings(
+                                      report_item.tweet_retry_count,
+                                      '20'
+                                    ) < 0
                                   ) {
-                                  log.info(`Duplicate tweet attempt that can be retried for request ${request_id} region ${region_name}.`);
+                                    log.info(
+                                      `Duplicate tweet attempt that can be retried for request ${request_id} region ${region_name}.`
+                                    );
 
-                                  // This means Twitter detected a tweet as a duplicate in a way
-                                  // that we can retry sending this thread of tweets later.
-                                  report_item_records_to_retry = report_item_records_to_retry.concat(reportItemsByRequest[request_id][region_name]);
-                                  reportItemsByRequest[request_id][region_name] = [];
+                                    // This means Twitter detected a tweet as a duplicate in a way
+                                    // that we can retry sending this thread of tweets later.
+                                    report_item_records_to_retry = report_item_records_to_retry.concat(
+                                      reportItemsByRequest[request_id][
+                                        region_name
+                                      ]
+                                    );
+                                    reportItemsByRequest[request_id][
+                                      region_name
+                                    ] = [];
 
-                                  UpdateReportItemRecords(reportItemsByRequest[request_id][region_name], 'RETRY')
-                                    .then( () => {
-                                      resolve();
-                                    }).catch ( (err) => {
-                                      reject(err);
-                                    }).finally( () => {
-                                      log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
-                                      processing_mutex.unlock(lock);
-                                    });
+                                    UpdateReportItemRecords(
+                                      reportItemsByRequest[request_id][
+                                        region_name
+                                      ],
+                                      'RETRY'
+                                    )
+                                      .then(() => {
+                                        resolve();
+                                      })
+                                      .catch(err => {
+                                        reject(err);
+                                      })
+                                      .finally(() => {
+                                        log.trace(
+                                          `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`
+                                        );
+                                        processing_mutex.unlock(lock);
+                                      });
+                                  } else {
+                                    log.warn(
+                                      `Tweets for request ${request_id} region ${region_name} were retried the max number of times. Pretending they succeeded.`
+                                    );
+
+                                    UpdateReportItemRecords(
+                                      reportItemsByRequest[request_id][
+                                        region_name
+                                      ],
+                                      'PROCESSED'
+                                    )
+                                      .then(() => {
+                                        resolve();
+                                      })
+                                      .catch(err => {
+                                        reject(err);
+                                      })
+                                      .finally(() => {
+                                        log.trace(
+                                          `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`
+                                        );
+                                        processing_mutex.unlock(lock);
+                                      });
+
+                                    log.trace(
+                                      `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}...`
+                                    );
+                                    processing_mutex.unlock(lock);
+
+                                    resolve();
+                                  }
                                 } else {
-                                  log.warn(`Tweets for request ${request_id} region ${region_name} were retried the max number of times. Pretending they succeeded.`);
-
-                                  UpdateReportItemRecords(reportItemsByRequest[request_id][region_name], 'PROCESSED')
-                                    .then( () => {
-                                      resolve();
-                                    }).catch ( (err) => {
-                                      reject(err);
-                                    }).finally( () => {
-                                      log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success ${request_id} region ${region_name}...`);
-                                      processing_mutex.unlock(lock);
-                                    });
-
-                                  log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for success on give up ${request_id} region ${region_name}...`);
+                                  log.trace(
+                                    `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}...`
+                                  );
                                   processing_mutex.unlock(lock);
 
-                                  resolve();
+                                  reject(err);
                                 }
-                              } else {
-                                log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} for non-retry error ${request_id} region ${region_name}...`);
-                                processing_mutex.unlock(lock);
-
-                                reject(err);
-                              }
-                            });
-                          } catch( err ) {
-                            log.trace(`Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}...`);
+                              });
+                          } catch (err) {
+                            log.trace(
+                              `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}...`
+                            );
                             processing_mutex.unlock(lock);
 
                             reject(err);
-                          } 
-                        });
+                          }
+                        }
+                      );
                     })
                   );
                 }
-              });
+              }
+            );
           });
 
           log.debug(
@@ -1466,23 +1627,30 @@ function processReportItemRecords(): Promise<void> {
                 // Report how many tweets we sent for each region.
                 let msg: string = '';
                 let total_tweets_sent: number = 0;
-                
+
                 Object.keys(tweetCountByRequest).forEach(request_id => {
                   Object.keys(tweetCountByRequest[request_id]).forEach(
                     region_name => {
-                      total_tweets_sent += tweetCountByRequest[request_id][region_name];
-                      
+                      total_tweets_sent +=
+                        tweetCountByRequest[request_id][region_name];
+
                       msg += `\n - ${tweetCountByRequest[request_id][region_name]} tweets for request ${request_id} ${reportItemsByRequest[request_id][region_name][0].license} in ${region_name} region for ${reportItemsByRequest[request_id][region_name].length} report items`;
                     }
                   );
                 });
-                
-                msg = `${total_tweets_sent == 0 ? 'Zero' : total_tweets_sent} tweets sent for ${report_items.length} report item records${total_tweets_sent == 0 ? '.' : ': '}.` +
-                  msg;
+
+                msg =
+                  `${
+                    total_tweets_sent == 0 ? 'Zero' : total_tweets_sent
+                  } tweets sent for ${report_items.length} report item records${
+                    total_tweets_sent == 0 ? '.' : ': '
+                  }.` + msg;
 
                 log.info(msg);
               } else {
-                log.info(`No tweets were sent. No report item records need updating.`);
+                log.info(
+                  `No tweets were sent. No report item records need updating.`
+                );
               }
 
               resolve();
@@ -1567,7 +1735,7 @@ function GetReportItemForPseudoCitation(
         citationQueryText
           .replace('__LICENSE__', formatPlate(citation.license))
           .replace('__COUNT__', query_count.toString())
-        );
+      );
       break;
 
     default:
@@ -1713,38 +1881,61 @@ function getLastDmId(): string {
   return lastdm ? lastdm : '0';
 }
 
-function getLastMentionId(): string {
-  var lastmention = localStorage.getItem('lastmention');
+function getLastMentionId(): Promise<string> {
+  return getStateValue('last_mention_id');
+}
 
-  if (!lastmention) {
-    // When moving from storing this in local file to using localstorage,
-    // There is the first-time read that will return 0.
-    // This would result in the bot reprocessing every tweet that is still
-    // in the twitter delayed feed.
-    // To avoid this, we put the current lastmentionid in the .env file
-    // and read it from there in this first-read scenario.
-    if (process.env.hasOwnProperty('FALLBACK_LAST_MENTION_ID')) {
-      lastmention = process.env.FALLBACK_LAST_MENTION_ID;
+function getStateValue(keyname: string): Promise<string> {
+  var docClient: any = new AWS.DynamoDB.DocumentClient();
 
-      if (lastmention <= 0) {
-        throw new Error('No last mention id found.');
-      } else {
-        setLastMentionId(lastmention);
-      }
+  var params = {
+    TableName: tableNames['State'],
+    Key: {
+      keyname: keyname
     }
-  }
+  };
 
-  return lastmention ? lastmention : '0';
+  return new Promise<string>((resolve, reject) => {
+    docClient.get(params, async (err, result) => {
+      if (err) {
+        handleError(err);
+      } else {
+        resolve(result.Item.keyvalue.toString());
+      }
+    });
+  });
 }
 
-function setLastDmId(lastDmId: string) {
-  lastdmLog.info(`Writing last dm id ${lastDmId}.`);
-  localStorage.setItem('lastdm', lastDmId);
+function putStateValue(keyname: string, keyvalue: string) {
+  var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+  var params = {
+    TableName: tableNames['State'],
+    Item: {
+      keyname: keyname,
+      keyvalue: keyvalue
+    }
+  };
+
+  return new Promise<void>((resolve, reject) => {
+    docClient.put(params, async (err, result) => {
+      if (err) {
+        handleError(err);
+      }
+
+      resolve();
+    });
+  });
 }
 
-function setLastMentionId(lastMentionId: string) {
-  lastmentionLog.info(`Writing last mention id ${lastMentionId}.`);
-  localStorage.setItem('lastmention', lastMentionId);
+function setLastDmId(last_dm_id: string) {
+  lastdmLog.info(`Writing last dm id ${last_dm_id}.`);
+  return putStateValue('last_dm_id', last_dm_id);
+}
+
+function setLastMentionId(last_mention_id: string): Promise<void> {
+  lastdmLog.info(`Writing last mention id ${last_mention_id}.`);
+  return putStateValue('last_mention_id', last_mention_id);
 }
 
 function handleError(error: Error): void {
@@ -2000,12 +2191,15 @@ function WriteReportItemRecords(
   );
 }
 
-function UpdateReportItemRecords(report_items: Array<IReportItemRecord>, status: string): Promise<void> {
-  return new Promise<void>( (resolve, reject) => {
+function UpdateReportItemRecords(
+  report_items: Array<IReportItemRecord>,
+  status: string
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     var now = Date.now();
     let report_item_records: Array<any> = [];
 
-    report_items.forEach( (report_item) => {
+    report_items.forEach(report_item => {
       if (status === 'PROCESSED') {
         // Now that the record is PROCESSED, TTL is 30 days
         var ttl_expire: number =
@@ -2015,9 +2209,11 @@ function UpdateReportItemRecords(report_items: Array<IReportItemRecord>, status:
         report_item.modified = now;
         report_item.ttl_expire = ttl_expire;
 
-        if (!report_item.hasOwnProperty('tweet_retry_count') ||
-           !report_item.tweet_retry_count) {
-          report_item.tweet_retry_count = "1";
+        if (
+          !report_item.hasOwnProperty('tweet_retry_count') ||
+          !report_item.tweet_retry_count
+        ) {
+          report_item.tweet_retry_count = '1';
         }
 
         report_item_records.push({
@@ -2026,10 +2222,12 @@ function UpdateReportItemRecords(report_items: Array<IReportItemRecord>, status:
           }
         });
       } else if (status == 'RETRY') {
-        if (report_item.hasOwnProperty("tweet_retry_count")) {
-          report_item.tweet_retry_count = (parseInt(report_item.tweet_retry_count, 10) + 1).toString();
+        if (report_item.hasOwnProperty('tweet_retry_count')) {
+          report_item.tweet_retry_count = (
+            parseInt(report_item.tweet_retry_count, 10) + 1
+          ).toString();
         } else {
-          report_item.tweet_retry_count = "1";
+          report_item.tweet_retry_count = '1';
         }
 
         report_item.modified = now;
@@ -2065,33 +2263,4 @@ function UpdateReportItemRecords(report_items: Array<IReportItemRecord>, status:
       log.debug(`No report items to update.`);
     }
   });
-}
-
-export function TypeCheckObject(o: IReportItemRecord, indent: number = 0): string {
-  var out: string = '';
-  if (typeof indent === 'undefined') {
-    indent = 0;
-  }
-  for (var p in o) {
-    if (o.hasOwnProperty(p)) {
-      var val: any = (o[p]).type;
-      out += new Array(4 * indent + 1).join(' ') + p + ': ';
-      if (typeof val === 'object') {
-        if (val instanceof Date) {
-          out += 'Date "' + val + '"';
-        } else {
-          out +=
-            '{\n' +
-            TypeCheckObject(val, indent + 1) +
-            new Array(4 * indent + 1).join(' ') +
-            '}';
-        }
-      } else if (typeof val === 'function') {
-      } else {
-        out += '"' + val + '"';
-      }
-      out += ',\n';
-    }
-  }
-  return out;
 }

@@ -19,12 +19,12 @@ export function FormatMilliseconds(millisec: number) {
   var days = parseInt((millisec / (1000 * 60 * 60 * 24)).toFixed(1));
 
   if (seconds < 60) {
-      return seconds + " seconds";
+    return seconds + ' seconds';
   } else if (minutes < 60) {
-      return minutes + " minutes";
+    return minutes + ' minutes';
   } else if (hours < 24) {
-      return hours + " hours";
+    return hours + ' hours';
   } else {
-      return days + " days"
+    return days + ' days';
   }
 }

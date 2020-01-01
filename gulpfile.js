@@ -5,18 +5,18 @@ const ts = require('gulp-typescript');
 const mocha = require('gulp-mocha');
 const del = require('del');
 const path = require('path');
+const nodemon = require('gulp-nodemon');
 
-//exports.build = series(clean, pretty_check, parallel(build, copyconfigfiles));
+exports.build = series(clean, pretty_check, parallel(build, copyconfigfiles));
 exports.clean = clean;
 exports.copyconfigfiles = copyconfigfiles;
-//exports.test = test;
+exports.test = test;
 exports.pretty = pretty;
 exports.pretty_check = pretty_check;
-//exports.default = series(clean, pretty_check, build, copyconfigfiles);
+exports.default = series(clean, pretty_check, build, copyconfigfiles);
 
 const tsProject = ts.createProject('./tsconfig.json');
 
-/*
 function build(cb) {
   const merge = require('merge2');
 
@@ -28,20 +28,18 @@ function build(cb) {
   ]);
 }
 
-*/
-
 function clean(cb) {
   return del(['dist/**/*']);
 }
 
-//function test(cb) {
-//  return src('./dist/test/**/*.ts')
-//    .pipe(tsProject())
-//    .pipe(mocha({ require: ['ts-node/register'] }))
-//    .on('end', function() {
-//      cb;
-//    });
-//}
+function test(cb) {
+  return src('./dist/test/**/*.ts')
+    .pipe(tsProject())
+    .pipe(mocha({ require: ['ts-node/register'] }))
+    .on('end', function() {
+      cb;
+    });
+}
 
 function copyconfigfiles(cb) {
   return src('./config/**/*.json').pipe(dest('./dist/config/'));
