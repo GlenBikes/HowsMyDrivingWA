@@ -8,6 +8,11 @@ export { StatesAndProvinces, formatPlate } from './util/licensehelper';
 export { GetHowsMyDrivingId } from './util/stringutils';
 export { uuidv1 } from './util/stringutils';
 
+export interface IStateRecord {
+  keyname: string;
+  keyvalue: string;
+}
+
 export interface IRequestRecord {
   id: string;
   license: string;
@@ -50,7 +55,7 @@ export class ReportItemRecord implements IReportItemRecord {
     this.record_num = record_num;
     this.license = citation.license;
     this.region = citation.region;
-    this.tweet_retry_count = "0";
+    this.tweet_retry_count = '0';
     this.tweet_id = citation.tweet_id;
     this.tweet_id_str = citation.tweet_id_str;
     this.tweet_user_id = citation.tweet_user_id;

@@ -1,4 +1,3 @@
-
 import { sleep } from 'howsmydriving-utils';
 
 import * as packpath from 'packpath';
@@ -108,12 +107,12 @@ function reloadlog(reason: string) {
 // Handle the change/add events for the log4js config file.
 watcher
   .on('add', (path: string) => {
-    sleep(2000).then( () => {
+    sleep(2000).then(() => {
       reloadlog(`add of ${path}`);
-    })
+    });
   })
   .on('change', (path: string) => {
-    sleep(2000).then( () => {
+    sleep(2000).then(() => {
       reloadlog(`change of ${path}`);
     });
   });

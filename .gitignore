@@ -4,4 +4,4 @@ dist/**
 log/**
 .localstore/**
 node_modules/**
-.v8*
+.v*

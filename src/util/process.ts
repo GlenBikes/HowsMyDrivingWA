@@ -19,7 +19,9 @@ export function getAppRootPath(): string {
     root_path = path.resolve(__dirname + '/../../../');
 
     if (!fs.existsSync(path.resolve(root_path, 'package.json'))) {
-      throw new Error(`Cannot find app root path containing package.json: ${__dirname}.`);
+      throw new Error(
+        `Cannot find app root path containing package.json: ${__dirname}.`
+      );
     }
   }
 
