@@ -2,7 +2,6 @@
 import * as AWS from 'aws-sdk';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 import { Request, Response } from 'express';
-import * as consecutive from 'consecutive';
 import * as http from 'http';
 import * as uuid from 'uuid';
 import * as mutex from 'mutex';
@@ -45,17 +44,8 @@ import { getAppRootPath, getUnusedPort } from './util/process';
 // legacy commonjs modules
 const express = require('express'),
   fs = require('fs'),
-  LocalStorage = require('node-localstorage').LocalStorage,
   path = require('path'),
-  Q = require('dynamo-batchwrite-queue'),
-  packpath = require('packpath');
-
-// Local storage to keep track of our last processed tweet/dm
-var localStorage = new LocalStorage('./.localstore');
-const next_unique_number = consecutive();
-
-let packpath_parent = packpath.parent() ? packpath.parent() : packpath.self();
-let packpath_self = packpath.self();
+  Q = require('dynamo-batchwrite-queue');
 
 let package_json_path = path.resolve(__dirname + '/../package.json');
 
@@ -1854,31 +1844,8 @@ function GetQueryCount(
   );
 }
 
-function getLastDmId(): string {
-  var lastdm = localStorage.getItem('lastdm');
-
-  // TODO: Should we rather just add some code to go query what the most
-  // recent tweet/dm id is (can we even do that with dm?) and set that as
-  // the last id?
-  if (!lastdm) {
-    // When moving from storing this in local file to using localstorage,
-    // There is the first-time read that will return 0.
-    // This would result in the bot reprocessing every tweet that is still
-    // in the twitter delayed feed.
-    // To avoid this, we put the current lastdmid in the .env file
-    // and read it from there in this first-read scenario.
-    if (process.env.hasOwnProperty('FALLBACK_LAST_DM_ID')) {
-      lastdm = process.env.FALLBACK_LAST_DM_ID;
-
-      if (lastdm <= 0) {
-        throw new Error('No last dm id found.');
-      } else {
-        setLastDmId(lastdm);
-      }
-    }
-  }
-
-  return lastdm ? lastdm : '0';
+function getLastDmId(): Promise<string> {
+  return getStateValue('last_dm_id');
 }
 
 function getLastMentionId(): Promise<string> {
