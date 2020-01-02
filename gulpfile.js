@@ -1,19 +1,20 @@
 const { series, parallel, src, dest } = require('gulp');
 
+var gulp = require('gulp');
+
 const gulp_prettier = require('gulp-prettier');
 const ts = require('gulp-typescript');
 const mocha = require('gulp-mocha');
 const del = require('del');
 const path = require('path');
-const nodemon = require('gulp-nodemon');
 
-exports.build = series(clean, pretty_check, parallel(build, copyconfigfiles));
+exports.rebuild = series(clean, pretty_check, parallel(build, copyconfigfiles));
 exports.clean = clean;
 exports.copyconfigfiles = copyconfigfiles;
 exports.test = test;
 exports.pretty = pretty;
 exports.pretty_check = pretty_check;
-exports.default = series(clean, pretty_check, build, copyconfigfiles);
+exports.default = series(clean, pretty_check, parallel(build, copyconfigfiles));
 
 const tsProject = ts.createProject('./tsconfig.json');
 
