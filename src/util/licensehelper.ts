@@ -1,81 +1,28 @@
+import { DumpObject, PrintTweet } from 'howsmydriving-utils';
+
+const provinces = require('provinces');
+
+var states_and_provinces = provinces.reduce((acc: Array<string>, cur: any) => {
+  if (!acc) {
+    acc = new Array<string>();
+  }
+
+  if (!cur || !cur.country) {
+    return acc;
+  }
+
+  if (cur.country === 'US' || cur.country === 'CA') {
+    acc.push(cur.short);
+  }
+
+  return acc;
+}, undefined);
+
 /**
  * Array of all valid 2 character abbreviations for US states/occupied territories and
  * Canadian provinces/territories
  **/
-export let StatesAndProvinces: Array<string> = [
-  'AL',
-  'AK',
-  'AS',
-  'AZ',
-  'AR',
-  'CA',
-  'CO',
-  'CT',
-  'DE',
-  'DC',
-  'FM',
-  'FL',
-  'GA',
-  'GU',
-  'HI',
-  'ID',
-  'IL',
-  'IN',
-  'IA',
-  'KS',
-  'KY',
-  'LA',
-  'ME',
-  'MH',
-  'MD',
-  'MA',
-  'MI',
-  'MN',
-  'MS',
-  'MO',
-  'MT',
-  'NE',
-  'NV',
-  'NH',
-  'NJ',
-  'NM',
-  'NY',
-  'NC',
-  'ND',
-  'MP',
-  'OH',
-  'OK',
-  'OR',
-  'PW',
-  'PA',
-  'PR',
-  'RI',
-  'SC',
-  'SD',
-  'TN',
-  'TX',
-  'UT',
-  'VT',
-  'VI',
-  'VA',
-  'WA',
-  'WV',
-  'WI',
-  'WY',
-  'AB',
-  'BC',
-  'MB',
-  'NB',
-  'NL',
-  'NT',
-  'NS',
-  'NU',
-  'ON',
-  'PE',
-  'QC',
-  'SK',
-  'YT'
-];
+export let StatesAndProvinces: Array<string> = states_and_provinces;
 
 /**
  * When displaying a license we should not use XX:nnnnn especially since when

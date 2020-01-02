@@ -10,6 +10,7 @@ dependencies:
   howsmydriving-utils: 0.1.122
   log4js: 4.5.1
   mutex: 1.0.4
+  provinces: 1.11.0
   redis-server: 1.2.2
   request: 2.88.0
   uuid: 3.3.3
@@ -4484,6 +4485,10 @@ packages:
       node: '>= 0.8.0'
     resolution:
       integrity: sha1-L29ffA9tCBCelnZZx5uIqe1ek7Q=
+  /provinces/1.11.0:
+    dev: false
+    resolution:
+      integrity: sha1-Rni9Y+iBHwoZTrwcV+7hxV585sI=
   /proxy-addr/2.0.5:
     dependencies:
       forwarded: 0.1.2
@@ -6195,6 +6200,7 @@ specifiers:
   mocha-typescript: ^1.1.17
   mutex: ^1.0.4
   prettier: ^1.19.1
+  provinces: ^1.11.0
   redis-server: ^1.2.2
   request: ^2.88.0
   sinon: ^7.5.0
