@@ -2,13 +2,14 @@
   "compilerOptions": {
     "lib": ["esnext"],
     "module": "commonjs",
-    "target": "es5",
+    "target": "es6",
     "moduleResolution": "node",
     "declaration": true,
     "rootDir": ".",
     "outDir": "dist",
     "preserveSymlinks": true,
     "downlevelIteration": true,
+    "skipLibCheck": true,
     "types" : ["node", "mocha"]
   },
   "include": [

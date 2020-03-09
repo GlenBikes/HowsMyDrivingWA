@@ -8,7 +8,7 @@ const mocha = require('gulp-mocha');
 const del = require('del');
 const path = require('path');
 
-exports.rebuild = series(clean, pretty_check, parallel(build, copyconfigfiles));
+exports.build = series(clean, pretty_check, parallel(build, copyconfigfiles));
 exports.clean = clean;
 exports.copyconfigfiles = copyconfigfiles;
 exports.test = test;
@@ -38,7 +38,7 @@ function test(cb) {
     .pipe(tsProject())
     .pipe(mocha({ require: ['ts-node/register'] }))
     .on('end', function() {
-      cb;
+      cb();
     });
 }
 

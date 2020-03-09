@@ -2,17 +2,20 @@
 import * as AWS from 'aws-sdk';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 import { Request, Response } from 'express';
-import * as http from 'http';
 import * as uuid from 'uuid';
 import * as mutex from 'mutex';
+// See https://redis.io/topics/quickstart
 import * as redis_server from 'redis-server';
 
 // howsmydriving-utils
 import { Citation, CitationIds } from 'howsmydriving-utils';
 import { DumpObject, PrintTweet } from 'howsmydriving-utils';
 import { ICitation, IRegion } from 'howsmydriving-utils';
+import { ICollision, Collision } from 'howsmydriving-utils';
 import { CompareNumericStrings } from 'howsmydriving-utils';
 import { SplitLongLines } from 'howsmydriving-utils';
+
+import { ICollisionRecord, CollisionRecord } from './interfaces';
 
 import {
   GetNewTweets,
@@ -40,12 +43,15 @@ import {
 import { FormatMilliseconds } from './util/stringutils';
 
 import { getAppRootPath, getUnusedPort } from './util/process';
+import { StateStore } from './util/statestore';
 
 // legacy commonjs modules
 const express = require('express'),
   fs = require('fs'),
   path = require('path'),
   Q = require('dynamo-batchwrite-queue');
+
+const one_day: number = 1000 * 60 * 60 * 24;
 
 let package_json_path = path.resolve(__dirname + '/../package.json');
 
@@ -63,6 +69,7 @@ export var __MODULE_NAME__: string = pjson.name;
 
 import { log, lastdmLog, lastmentionLog } from './logging';
 
+// See https://redis.io/topics/quickstart
 const redis_port: number = getUnusedPort();
 const redis_srv = new redis_server({
   port: redis_port,
@@ -100,6 +107,8 @@ const mutex_lock_opts_send_tweets = {
   maxWait: 30 * 60 * 1000 // the more regions we have, the longer the last reghion will have to wait to start sending tweets
 };
 
+log.info(`Adding redis_srv handlers...`);
+
 redis_srv
   .on('open', () => {
     log.debug(`redis_srv started on port ${redis_port}. Creating mutex...`);
@@ -110,7 +119,7 @@ redis_srv
         connectionString: `redis://127.0.0.1:${redis_port}`
       }
     });
-    log.trace(`Mutex created.`);
+    log.debug(`Mutex created.`);
   })
   .on('opening', () => {
     log.trace('redis_srv opening...');
@@ -130,6 +139,8 @@ redis_srv
   .catch((err: Error) => {
     handleError(err);
   });
+
+log.info(`Finished adding redis_srv hanlders...`);
 
 const noCitationsFoundMessage =
     'No __REGION_NAME__ citations found for plate #__LICENSE__.',
@@ -156,7 +167,8 @@ export const tableNames: { [tabletype: string]: string } = {
   State: `${process.env.DB_PREFIX}_State`,
   Request: `${process.env.DB_PREFIX}_Request`,
   Citations: `${process.env.DB_PREFIX}_Citations`,
-  ReportItems: `${process.env.DB_PREFIX}_ReportItems`
+  ReportItems: `${process.env.DB_PREFIX}_ReportItems`,
+  Collisions: `${process.env.DB_PREFIX}_Collisions`
 };
 
 AWS.config.update({ region: 'us-east-2' });
@@ -177,11 +189,17 @@ const MUTEX_KEY: { [index: string]: string } = {
   request_processing: '__HOWSMYDRIVING_REQUEST_PROCESSING__',
   citation_processing: '__HOWSMYDRIVING_CITATION_PROCESSING__',
   report_item_processing: '__HOWSMYDRIVING_REPORT_ITEM_PROCESSING__',
+  collision_processing: '__HOWSMYDRIVING_COLLISION_PROCESSING__',
   tweet_sending: '__HOWSMYDRIVING_TWEET_SENDING__',
-  dm_sending: '__HOWSMYDRIVING_DM_SENDING__'
+  dm_sending: '__HOWSMYDRIVING_DM_SENDING__',
+  safety_checking: '__HOWSMYDRIVING_SAFETY_CHECKING__'
 };
 
+log.info(`Calling app.use...`);
+
 app.use(express.static('public'));
+
+const listen_port: number = getUnusedPort();
 
 var listener = app.listen(process.env.PORT, function() {
   log.info(
@@ -190,6 +208,8 @@ var listener = app.listen(process.env.PORT, function() {
     }, started.`
   );
 });
+
+log.info(`Configuring process event handlers...`);
 
 process
   .on('exit', code => {
@@ -218,6 +238,8 @@ if (!process.env.REGIONS || process.env.REGIONS.split(',').length == 0) {
 }
 
 // TODO: This needs to be async
+log.info(`Triggering loading of regions...`);
+
 process.env.REGIONS.split(',').forEach(region_package => {
   region_package = region_package.trim();
 
@@ -234,6 +256,8 @@ process.env.REGIONS.split(',').forEach(region_package => {
           log.debug(
             `Imported region module ${module.Region.name} from module ${region_package}.`
           );
+
+          module.Region.Initialize(new StateStore(module.Region.name));
 
           regions[module.Region.name] = module.Region;
           resolve(module);
@@ -256,15 +280,26 @@ Promise.all(import_promises)
 
 /* tracks the largest tweet ID retweeted - they are not processed in order, due to parallelization  */
 /* uptimerobot.com is hitting this URL every 5 minutes. */
+log.info(`Setting /tweet handler...`);
 app.all('/tweet', function(request: Request, response: Response) {
+  log.info('In hmdwatest /tweet handler.');
+
   var docClient: any = new AWS.DynamoDB.DocumentClient();
 
-  var last_dm_id = getLastDmId();
+  /* First, let's load the ID of the last DM we responded to. */
+  /*
+  getLastDmId()
+    .then(last_dm_id => {
+      if (!last_dm_id) {
+        handleError(new Error('ERROR: No last DM found!'));
+      }
 
-  if (!last_dm_id) {
-    handleError(new Error('ERROR: No last dm found!'));
-  }
-
+      log.info(`Would be checking for DM's greater than ${last_dm_id}...`);
+    })
+    .catch(err => {
+      log.warn(`Error getting last_dm_id: ${err}`);
+    });
+  */
   var tweet_promises = [];
 
   log.trace(`Locking processing_mutex for ${MUTEX_KEY['tweet_processing']}...`);
@@ -376,25 +411,22 @@ app.all('/processrequests', (request: Request, response: Response) => {
         `Locked processing_mutex for ${MUTEX_KEY['request_processing']}.`
       );
 
-      processRequestRecords()
-        .then(() => {
-          log.info(`Finished processing requests.`);
+      try {
+        processRequestRecords()
+          .then(() => {
+            log.info(`Finished processing requests.`);
 
-          log.trace(
-            `Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on success...`
-          );
-          processing_mutex.unlock(lock);
-
-          response.sendStatus(200);
-        })
-        .catch((err: Error) => {
-          log.trace(
-            `Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} on error...`
-          );
-          processing_mutex.unlock(lock);
-
-          response.status(500).send(err);
-        });
+            response.sendStatus(200);
+          })
+          .catch((err: Error) => {
+            response.status(500).send(err);
+          });
+      } finally {
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['request_processing']} in finally...`
+        );
+        processing_mutex.unlock(lock);
+      }
     }
   );
 });
@@ -420,20 +452,15 @@ app.all('/processcitations', (request: Request, response: Response) => {
         processCitationRecords().then(() => {
           log.info(`Finished processing citations.`);
 
-          log.trace(
-            `Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on success...`
-          );
-          processing_mutex.unlock(lock);
-
           response.sendStatus(200);
         });
       } catch (err) {
+        response.status(500).send(err);
+      } finally {
         log.trace(
-          `Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} on error...`
+          `Unlocking processing_mutex for ${MUTEX_KEY['citation_processing']} in finally...`
         );
         processing_mutex.unlock(lock);
-
-        response.status(500).send(err);
       }
     }
   );
@@ -457,27 +484,24 @@ app.all('/processreportitems', (request: Request, response: Response) => {
           `Locked processing_mutex for ${MUTEX_KEY['report_item_processing']}.`
         );
 
-        processReportItemRecords()
-          .then(() => {
-            log.info(`Finished processing report items.`);
+        try {
+          processReportItemRecords()
+            .then(() => {
+              log.info(`Finished processing report items.`);
 
-            log.trace(
-              `Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on success...`
-            );
-            processing_mutex.unlock(lock);
+              response.sendStatus(200);
+            })
+            .catch(err => {
+              log.info(`Error processing report item records: ${err}.`);
 
-            response.sendStatus(200);
-          })
-          .catch(err => {
-            log.info(`Error processing report item records: ${err}.`);
-
-            log.trace(
-              `Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`
-            );
-            processing_mutex.unlock(lock);
-
-            response.status(500).send(err);
-          });
+              response.status(500).send(err);
+            });
+        } finally {
+          log.trace(
+            `Unlocking processing_mutex for ${MUTEX_KEY['report_item_processing']} on error...`
+          );
+          processing_mutex.unlock(lock);
+        }
       }
     );
   } catch (err) {
@@ -487,6 +511,132 @@ app.all('/processreportitems', (request: Request, response: Response) => {
 
     response.status(500).send(err);
   }
+});
+
+app.all('/collisions', function(request: Request, response: Response) {
+  log.info('In /collisions handler.');
+
+  var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+  log.trace(`Locking processing_mutex for ${MUTEX_KEY['safety_checking']}...`);
+
+  processing_mutex.lock(
+    MUTEX_KEY['safety_checking'],
+    mutex_lock_opts,
+    (err, lock) => {
+      if (err) {
+        handleError(err);
+      }
+
+      try {
+        log.trace(
+          `Locked processing_mutex for ${MUTEX_KEY['safety_checking']}.`
+        );
+
+        // Load the last processed collision data
+
+        // Query the current collision data
+        let collision_promises: {
+          [key: string]: Promise<Array<ICollision>>;
+        } = {};
+        Object.keys(regions).forEach(region_name => {
+          log.info(`Getting collision for '${region_name}'...`);
+
+          collision_promises[region_name] = regions[
+            region_name
+          ].GetRecentCollisions();
+        });
+
+        let collision_records: Array<any> = [];
+
+        Object.keys(collision_promises).forEach(region_name => {
+          collision_promises[region_name].then(collisions => {
+            collisions.forEach(collision => {
+              var item = {
+                PutRequest: {
+                  Item: new CollisionRecord(collision, region_name)
+                }
+              };
+
+              collision_records.push(item);
+            });
+          });
+        });
+
+        Promise.all(Object.values(collision_promises))
+          .then(collisions_arrays => {
+            var batch_write_promise: Promise<void>;
+
+            if (collision_records.length > 0) {
+              batch_write_promise = batchWriteWithExponentialBackoff(
+                docClient,
+                tableNames['Collisions'],
+                collision_records
+              );
+            }
+            if (batch_write_promise) {
+              batch_write_promise
+                .then(() => {
+                  log.debug(
+                    `Wrote ${collision_records.length} collision records.`
+                  );
+                })
+                .catch(err => {
+                  handleError(err);
+                });
+            }
+            response.sendStatus(200);
+          })
+          .catch((err: Error) => {
+            handleError(err);
+          });
+      } catch (err) {
+        response.status(500).send(err);
+      } finally {
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['safety_checking']} in finally...`
+        );
+        processing_mutex.unlock(lock);
+      }
+    }
+  );
+});
+
+app.all('/processcollisions', function(request: Request, response: Response) {
+  log.trace(
+    `Locking processing_mutex for ${MUTEX_KEY['collision_processing']}...`
+  );
+
+  processing_mutex.lock(
+    MUTEX_KEY['collision_processing'],
+    mutex_lock_opts,
+    (err, lock) => {
+      if (err) {
+        handleError(err);
+      }
+
+      log.trace(
+        `Locked processing_mutex for ${MUTEX_KEY['collision_processing']}.`
+      );
+
+      try {
+        processCollisionRecords()
+          .then(() => {
+            log.info(`Finished processing collisions.`);
+
+            response.sendStatus(200);
+          })
+          .catch((err: Error) => {
+            response.status(500).send(err);
+          });
+      } finally {
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['collision_processing']} in finally...`
+        );
+        processing_mutex.unlock(lock);
+      }
+    }
+  );
 });
 
 app.all('/searchtest', function(request: Request, response: Response) {
@@ -533,11 +683,13 @@ app.all('/searchtest', function(request: Request, response: Response) {
             handleError(err);
           });
       } catch (err) {
-        log.trace(
-          `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`
-        );
-        processing_mutex.unlock(lock);
         response.status(500).send(err);
+      } finally {
+        log.trace(
+          `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} in finally...`
+        );
+
+        processing_mutex.unlock(lock);
       }
     }
   );
@@ -801,8 +953,7 @@ function processRequestRecords(): Promise<void> {
               );
               var citation: ICitationRecord = {
                 id: GetHowsMyDrivingId(),
-                citation_id: CitationIds.CitationIDNoPlateFound,
-                Citation: CitationIds.CitationIDNoPlateFound,
+                citation_type: CitationIds.CitationIDNoPlateFound,
                 region: 'Global', // Not a valid region, but we don't pass this one down to region plugins.
                 processing_status: 'UNPROCESSED',
                 license: item.license,
@@ -841,6 +992,7 @@ function processRequestRecords(): Promise<void> {
                         log.debug(
                           `Retrieved ${citations.length} citations for ${plate}:${state} in ${region_name} region.`
                         );
+
                         if (!citations || citations.length == 0) {
                           var now = Date.now();
                           // TTL is 10 years from now until the records are PROCESSED
@@ -850,7 +1002,8 @@ function processRequestRecords(): Promise<void> {
 
                           var citation_record: ICitationRecord = {
                             id: GetHowsMyDrivingId(),
-                            citation_id: CitationIds.CitationIDNoCitationsFound,
+                            citation_type:
+                              CitationIds.CitationIDNoCitationsFound,
                             region: region_name,
                             request_id: item.id,
                             processing_status: 'UNPROCESSED',
@@ -890,22 +1043,21 @@ function processRequestRecords(): Promise<void> {
                               citation
                             );
 
+                            Object.assign(citation_record, item);
+
                             citation_record.id = GetHowsMyDrivingId();
-                            citation_record.citation_id = citation.citation_id;
+                            citation_record.citation_type =
+                              CitationIds.STANDARD_CITATION_ID;
                             citation_record.request_id = item.id;
                             citation_record.region = region_name;
                             citation_record.processing_status = 'UNPROCESSED';
-                            citation_record.license = item.license;
                             citation_record.created = now;
                             citation_record.modified = now;
                             citation_record.ttl_expire = ttl_expire;
-                            citation_record.tweet_id = item.tweet_id;
-                            citation_record.tweet_id_str = item.tweet_id_str;
-                            citation_record.tweet_user_id = item.tweet_user_id;
-                            citation_record.tweet_user_id_str =
-                              item.tweet_user_id_str;
-                            citation_record.tweet_user_screen_name =
-                              item.tweet_user_screen_name;
+
+                            if (region_name == 'New York City') {
+                              log.info(DumpObject(citation_record));
+                            }
 
                             // DynamoDB does not allow any property to be null or empty string.
                             // Set these values to 'None'.
@@ -1067,7 +1219,7 @@ function processCitationRecords(): Promise<void> {
             if (!(citation.region in citationsByRequest[citation.request_id])) {
               citationsByRequest[citation.request_id][
                 citation.region
-              ] = new Array<ICitation>();
+              ] = new Array<ICitationRecord>();
             }
 
             citationsByRequest[citation.request_id][citation.region].push(
@@ -1133,7 +1285,7 @@ function processCitationRecords(): Promise<void> {
                     // Check to see if there was only a dummy citation for this plate
                     if (
                       citationsByRequest[request_id][region_name].length == 1 &&
-                      citation.citation_id < CitationIds.MINIMUM_CITATION_ID
+                      citation.citation_type < CitationIds.MINIMUM_CITATION_ID
                     ) {
                       log.debug(
                         `No citations found for request ${request_id} license ${licenseByRequest[request_id]} in ${region_name} region.`
@@ -1410,7 +1562,6 @@ function processReportItemRecords(): Promise<void> {
                         (err, lock) => {
                           if (err) {
                             reject(err);
-                            return;
                           }
 
                           try {
@@ -1440,7 +1591,14 @@ function processReportItemRecords(): Promise<void> {
                             } as ITweet;
 
                             log.info(
-                              `Posting ${reportItemsByRequest[request_id][region_name].length} tweets for request ${request_id} ${report_item.license} in ${region_name} region.`
+                              `Posting ${
+                                reportItemsByRequest[request_id][region_name]
+                                  .length
+                              } tweets for request ${request_id} ${
+                                report_item.license
+                                  ? report_item.license
+                                  : 'no license'
+                              } in ${report_item.region} region.`
                             );
 
                             SendTweets(
@@ -1592,9 +1750,17 @@ function processReportItemRecords(): Promise<void> {
                               });
                           } catch (err) {
                             log.trace(
-                              `Unlocking processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}...`
+                              `Unlocking processing_mutex for ${
+                                MUTEX_KEY['tweet_sending']
+                              } in catch for error ${request_id} region ${region_name} error (${err}): ${DumpObject(
+                                err
+                              )}...`
                             );
                             processing_mutex.unlock(lock);
+
+                            log.trace(
+                              `Unlocked processing_mutex for ${MUTEX_KEY['tweet_sending']} in catch for error ${request_id} region ${region_name}...`
+                            );
 
                             reject(err);
                           }
@@ -1659,6 +1825,119 @@ function processReportItemRecords(): Promise<void> {
   });
 }
 
+async function processCollisionRecords(): Promise<Array<string>> {
+  return new Promise<Array<string>>((resolve, reject) => {
+    GetCollisionRecords()
+      .then((collisions: Array<ICollision>) => {
+        log.trace(`Retrieved ${collisions.length} collisions.`);
+        let collision_promises: { [key: string]: Promise<Array<string>> } = {};
+
+        if (collisions && collisions.length > 0) {
+          let collisionsByRegion: {
+            [region_name: string]: Array<ICollision>;
+          } = {};
+
+          log.debug(
+            `Processing ${collisions.length} collision records for all regions...`
+          );
+
+          // Sort them based on request
+          collisions.forEach((collision: ICollision) => {
+            if (!(collision.region in Object.keys(collisionsByRegion))) {
+              collisionsByRegion[collision.region] = new Array<ICollision>();
+            }
+
+            collisionsByRegion[collision.region].push(collision);
+          });
+
+          Object.keys(collisionsByRegion).forEach(region_name => {
+            collision_promises[region_name] = processCollisionRecordsForRegion(
+              collisionsByRegion[region_name],
+              region_name
+            );
+          });
+
+          log.info(
+            `Waiting for all ${
+              Object.keys(collision_promises).length
+            } collision_promises to be resolved.`
+          );
+
+          let report_items: Array<IReportItemRecord> = [];
+
+          Promise.all(Object.values(collision_promises))
+            .then((tweets: Array<Array<string>>) => {
+              let idx: number = 0;
+              tweets.forEach(inner_tweets => {
+                let region_name = Object.keys(collision_promises)[idx];
+
+                inner_tweets.forEach((tweet: string) => {
+                  let report_item_record: IReportItemRecord = new ReportItemRecord(
+                    tweet,
+                    0
+                  );
+
+                  report_item_record.region = region_name;
+
+                  // Create a fake request ID to ensure each of these report records
+                  // are considered independent and not posted in a thread.
+                  report_item_record.request_id = GetHowsMyDrivingId();
+
+                  report_items.push(report_item_record);
+                });
+
+                idx = idx + 1;
+              });
+
+              WriteReportItemRecords(
+                new AWS.DynamoDB.DocumentClient(),
+                report_items
+              )
+                .then(() => {
+                  log.info(
+                    `Wrote ${report_items.length} report item records for all regions.`
+                  );
+                })
+                .catch((e: Error) => {
+                  handleError(e);
+                });
+
+              resolve();
+            })
+            .catch(err => {
+              handleError(err);
+            });
+        } else {
+          resolve();
+        }
+      })
+      .catch((err: Error) => {
+        handleError(err);
+      });
+  });
+}
+
+function processCollisionRecordsForRegion(
+  collisions: Array<ICollision>,
+  region_name: string
+): Promise<Array<string>> {
+  return new Promise<Array<string>>((resolve, reject) => {
+    regions[region_name].ProcessCollisions(collisions).then(tweets => {
+      UpdateCollisionRecords(collisions, 'PROCESSED')
+        .then(() => {
+          log.info(
+            `processCollisionRecordsForRegion: Resolving tweets: ${tweets}`
+          );
+
+          resolve(tweets);
+        })
+        .catch((err: Error) => {
+          handleError(err);
+        });
+    });
+  });
+}
+
 function batchWriteWithExponentialBackoff(
   docClient: AWS.DynamoDB.DocumentClient,
   table: string,
@@ -1700,10 +1979,12 @@ function GetReportItemForPseudoCitation(
   region_name: string,
   query_count: number
 ): string {
-  if (!citation || citation.citation_id >= CitationIds.MINIMUM_CITATION_ID) {
-    throw new Error(`ERROR: Unexpected citation ID: ${citation.citation_id}.`);
+  if (!citation || citation.citation_type >= CitationIds.MINIMUM_CITATION_ID) {
+    throw new Error(
+      `ERROR: Unexpected citation ID: ${citation.citation_type}.`
+    );
   }
-  switch (citation.citation_id) {
+  switch (citation.citation_type) {
     case CitationIds.CitationIDNoPlateFound:
       // We need to ensure that we never create two of these 'no plate found'
       // messages that are identical or Twitter will prevent the second one
@@ -1730,7 +2011,7 @@ function GetReportItemForPseudoCitation(
 
     default:
       throw new Error(
-        `ERROR: Unexpected citation ID: ${citation.citation_id}.`
+        `ERROR: Unexpected citation ID: ${citation.citation_type}.`
       );
       break;
   }
@@ -1863,12 +2144,19 @@ function getStateValue(keyname: string): Promise<string> {
   };
 
   return new Promise<string>((resolve, reject) => {
+    var ret: string;
     docClient.get(params, async (err, result) => {
       if (err) {
         handleError(err);
-      } else {
-        resolve(result.Item.keyvalue.toString());
       }
+
+      if (!result.Item || !result.Item['keyname']) {
+        log.warn(`getStateValue: State value of '${keyname}' not found.`);
+      } else {
+        ret = result.Item['keyvalue'].toString();
+      }
+
+      resolve(ret);
     });
   });
 }
@@ -1905,7 +2193,7 @@ function setLastMentionId(last_mention_id: string): Promise<void> {
   return putStateValue('last_mention_id', last_mention_id);
 }
 
-function handleError(error: Error): void {
+export function handleError(error: Error): void {
   // Truncate the callstack because only the first few lines are relevant to this code.
   var stacktrace = '';
 
@@ -2130,6 +2418,63 @@ function GetReportItemRecords() {
   });
 }
 
+// asynchronous query function to fetch all collision records.
+// returns: promise
+function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
+  var docClient = new AWS.DynamoDB.DocumentClient();
+  var collision_records: Array<ICollisionRecord> = [];
+
+  log.trace(`Getting collision records...`);
+
+  // Query unprocessed collisions
+  var params = {
+    TableName: tableNames['Collisions'],
+    IndexName: 'processing_status-index',
+    Select: 'ALL_ATTRIBUTES',
+    KeyConditionExpression: '#processing_status = :pkey',
+    ExpressionAttributeNames: {
+      '#processing_status': 'processing_status'
+    },
+    ExpressionAttributeValues: {
+      ':pkey': 'UNPROCESSED'
+    }
+  };
+
+  return new Promise(function(resolve, reject) {
+    try {
+      log.trace(`Making query for unprocessed collisions...`);
+
+      docClient.query(params, async (err: Error, result: QueryOutput) => {
+        if (err) {
+          handleError(err);
+        }
+
+        log.trace(`Retrieved ${result.Items.length} collision records.`);
+
+        // 3. Check if we retrieved all the records
+        if (
+          result.hasOwnProperty('LastEvaluatedKey') &&
+          result.LastEvaluatedKey
+        ) {
+          // Paging!!!!
+        } else {
+          // TODO: There must be a type-safe way to do this...
+          let collision_records_batch: any = result.Items;
+          collision_records = collision_records_batch as Array<
+            ICollisionRecord
+          >;
+        }
+
+        log.trace(`Resolving ${collision_records.length} collision records.`);
+
+        resolve(collision_records);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 function WriteReportItemRecords(
   docClient: AWS.DynamoDB.DocumentClient,
   report_items: Array<IReportItemRecord>
@@ -2227,7 +2572,59 @@ function UpdateReportItemRecords(
           reject(err);
         });
     } else {
+      resolve();
       log.debug(`No report items to update.`);
+    }
+  });
+}
+
+function UpdateCollisionRecords(
+  collisions: Array<ICollisionRecord>,
+  status: string
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    var now = Date.now();
+    let collision_records: Array<any> = [];
+
+    collisions.forEach(collision => {
+      if (status === 'PROCESSED') {
+        // Now that the record is PROCESSED, TTL is 30 days
+        var ttl_expire: number =
+          new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
+
+        collision.processing_status = 'PROCESSED';
+        collision.modified = now;
+        collision.ttl_expire = ttl_expire;
+
+        collision_records.push({
+          PutRequest: {
+            Item: collision
+          }
+        });
+      }
+    });
+
+    if (collision_records.length > 0) {
+      batchWriteWithExponentialBackoff(
+        new AWS.DynamoDB.DocumentClient(),
+        tableNames['Collisions'],
+        collision_records
+      )
+        .then(() => {
+          // This is the one and only success point for these report item records.
+          // Every other codepath is an error of some kind.
+          log.debug(
+            `Updated ${collision_records.length} collisions to ${status} for region ${collisions[0].region}.`
+          );
+
+          // Tweets for all the requests completed successfully and report item records updated.
+          resolve();
+        })
+        .catch((err: Error) => {
+          reject(err);
+        });
+    } else {
+      log.debug(`No collisions to update.`);
     }
   });
 }
