@@ -232,12 +232,13 @@ log.info('Loading regions...');
 const regions: { [key: string]: IRegion } = {};
 let import_promises: Array<Promise<void>> = [];
 
-if (!process.env.REGIONS || process.env.REGIONS.split(',').length == 0) {
+if (!process.env.REGIONS || process.env.REGIONS.length == 0) {
   log.error(`No regions configured in process.env.REGIONS. Aborting.`);
   process.exit(PROCESS_EXIT_CODES['no-regions']);
 }
 
 // TODO: This needs to be async
+export let active_regions: Array<string> = [];
 log.info(`Triggering loading of regions...`);
 
 process.env.REGIONS.split(',').forEach(region_package => {
@@ -249,6 +250,7 @@ process.env.REGIONS.split(',').forEach(region_package => {
   }
 
   log.debug(`Loading package ${region_package}`);
+
   import_promises.push(
     new Promise<any>((resolve, reject) => {
       import(region_package)
@@ -260,6 +262,7 @@ process.env.REGIONS.split(',').forEach(region_package => {
           module.Region.Initialize(new StateStore(module.Region.name));
 
           regions[module.Region.name] = module.Region;
+          active_regions.push(module.Region.name);
           resolve(module);
         })
         .catch(err => {
@@ -516,8 +519,6 @@ app.all('/processreportitems', (request: Request, response: Response) => {
 app.all('/collisions', function(request: Request, response: Response) {
   log.info('In /collisions handler.');
 
-  var docClient: any = new AWS.DynamoDB.DocumentClient();
-
   log.trace(`Locking processing_mutex for ${MUTEX_KEY['safety_checking']}...`);
 
   processing_mutex.lock(
@@ -533,58 +534,10 @@ app.all('/collisions', function(request: Request, response: Response) {
           `Locked processing_mutex for ${MUTEX_KEY['safety_checking']}.`
         );
 
-        // Load the last processed collision data
+        let dynamodb_records: Array<any> = [];
 
-        // Query the current collision data
-        let collision_promises: {
-          [key: string]: Promise<Array<ICollision>>;
-        } = {};
-        Object.keys(regions).forEach(region_name => {
-          log.info(`Getting collision for '${region_name}'...`);
-
-          collision_promises[region_name] = regions[
-            region_name
-          ].GetRecentCollisions();
-        });
-
-        let collision_records: Array<any> = [];
-
-        Object.keys(collision_promises).forEach(region_name => {
-          collision_promises[region_name].then(collisions => {
-            collisions.forEach(collision => {
-              var item = {
-                PutRequest: {
-                  Item: new CollisionRecord(collision, region_name)
-                }
-              };
-
-              collision_records.push(item);
-            });
-          });
-        });
-
-        Promise.all(Object.values(collision_promises))
-          .then(collisions_arrays => {
-            var batch_write_promise: Promise<void>;
-
-            if (collision_records.length > 0) {
-              batch_write_promise = batchWriteWithExponentialBackoff(
-                docClient,
-                tableNames['Collisions'],
-                collision_records
-              );
-            }
-            if (batch_write_promise) {
-              batch_write_promise
-                .then(() => {
-                  log.debug(
-                    `Wrote ${collision_records.length} collision records.`
-                  );
-                })
-                .catch(err => {
-                  handleError(err);
-                });
-            }
+        checkForCollisions()
+          .then(() => {
             response.sendStatus(200);
           })
           .catch((err: Error) => {
@@ -629,6 +582,9 @@ app.all('/processcollisions', function(request: Request, response: Response) {
           .catch((err: Error) => {
             response.status(500).send(err);
           });
+      } catch (err) {
+        log.error(`Unhandled exception: ${DumpObject(err)}`);
+        response.status(500).send(err);
       } finally {
         log.trace(
           `Unlocking processing_mutex for ${MUTEX_KEY['collision_processing']} in finally...`
@@ -1825,8 +1781,182 @@ function processReportItemRecords(): Promise<void> {
   });
 }
 
-async function processCollisionRecords(): Promise<Array<string>> {
-  return new Promise<Array<string>>((resolve, reject) => {
+function checkForCollisions(): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+    // Query the current collision data
+    let collision_promises: {
+      [key: string]: Promise<Array<ICollision>>;
+    } = {};
+    Object.keys(regions).forEach(region_name => {
+      log.debug(`Getting collisions for '${region_name}'...`);
+
+      collision_promises[region_name] = regions[region_name]
+        .GetRecentCollisions()
+        .then((collisions: Array<ICollision>) => {
+          log.debug(
+            `Region ${region_name} returned ${collisions.length} collisions.`
+          );
+          return collisions;
+        });
+    });
+
+    let collisions_returned: Array<ICollision> = [];
+
+    // Query our store for unprocessed collisions
+    GetCollisionRecords()
+      .then((existing_collision_records: Array<ICollisionRecord>) => {
+        let existing_collision_records_by_region_id: {
+          [key: string]: { [key: string]: ICollision };
+        } = {};
+
+        existing_collision_records.forEach(collision => {
+          if (!existing_collision_records_by_region_id[collision.region]) {
+            existing_collision_records_by_region_id[collision.region] = {};
+          }
+
+          existing_collision_records_by_region_id[collision.region][
+            collision.id
+          ] = collision;
+        });
+
+        Promise.all(Object.values(collision_promises))
+          .then(collisions_arrays => {
+            // We will write all of the records returned by the region plugins
+            // plus any existing records we have in our store which are not
+            // returned by the region plugins (i.e. they are no longer a most
+            // recent collision of interest)
+            let collision_records_to_write: Array<any> = [];
+
+            let collision_records_by_region_id: {
+              [key: string]: { [key: string]: ICollision };
+            } = {};
+
+            let region_index: number = 0;
+
+            // Create a hash of the IDs of all collisions returned
+            // for each region plugin
+            collisions_arrays.forEach(
+              (region_collisions: Array<ICollision>) => {
+                let region_name = Object.keys(regions)[region_index];
+
+                region_collisions.forEach((collision: ICollision) => {
+                  if (!collision_records_by_region_id[region_name]) {
+                    collision_records_by_region_id[region_name] = {};
+                  }
+
+                  collision_records_by_region_id[region_name][
+                    collision.id
+                  ] = collision;
+
+                  let collision_record = new CollisionRecord(
+                    collision,
+                    region_name
+                  );
+
+                  if (
+                    existing_collision_records[region_name] &&
+                    existing_collision_records[region_name][collision.id]
+                  ) {
+                    // This collision already exists in our store.
+                    // Update it but keep the created date from existing record
+                    collision_record.created =
+                      existing_collision_records[region_name][
+                        collision.id
+                      ].created;
+                  }
+                  let record = {
+                    PutRequest: {
+                      Item: collision_record
+                    }
+                  };
+
+                  log.trace(
+                    `Adding collision record id: ${collision_record.id} region: ${collision_record.region}.`
+                  );
+
+                  collision_records_to_write.push(record);
+                });
+
+                region_index += 1;
+              }
+            );
+
+            // Any collision that is in our store but was not returned
+            // by the region plugins, should be marked PROCESSED since
+            // it is no longer a most recent collision
+            var now = Date.now();
+            // Now that the record is PROCESSED, TTL is 30 days
+            var ttl_expire: number =
+              new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
+            let processed_count: number = 0;
+
+            existing_collision_records.forEach(
+              (collision_record: ICollisionRecord) => {
+                if (
+                  !collision_records_by_region_id[collision_record.region] ||
+                  !collision_records_by_region_id[collision_record.region][
+                    collision_record.id
+                  ]
+                ) {
+                  collision_record.processing_status = 'PROCESSED';
+                  collision_record.modified = now;
+                  collision_record.ttl_expire = ttl_expire;
+
+                  let record = {
+                    PutRequest: {
+                      Item: collision_record
+                    }
+                  };
+
+                  log.trace(
+                    `Adding existing collision record setting to PROCESSED id: ${collision_record.id} region: ${collision_record.region}.`
+                  );
+
+                  collision_records_to_write.push(record);
+
+                  processed_count += 1;
+                }
+              }
+            );
+
+            var batch_write_promise: Promise<void>;
+
+            if (collision_records_to_write.length > 0) {
+              batch_write_promise = batchWriteWithExponentialBackoff(
+                docClient,
+                tableNames['Collisions'],
+                collision_records_to_write
+              );
+            }
+
+            if (batch_write_promise) {
+              batch_write_promise
+                .then(() => {
+                  log.debug(
+                    `Wrote ${collision_records_to_write.length} collision records, setting ${processed_count} to PROCESSED.`
+                  );
+                })
+                .catch(err => {
+                  handleError(err);
+                });
+            }
+          })
+          .catch((err: Error) => {
+            handleError(err);
+          });
+      })
+      .catch((err: Error) => {
+        handleError(err);
+      });
+
+    resolve();
+  });
+}
+
+async function processCollisionRecords(): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     GetCollisionRecords()
       .then((collisions: Array<ICollision>) => {
         log.trace(`Retrieved ${collisions.length} collisions.`);
@@ -1834,27 +1964,44 @@ async function processCollisionRecords(): Promise<Array<string>> {
 
         if (collisions && collisions.length > 0) {
           let collisionsByRegion: {
-            [region_name: string]: Array<ICollision>;
+            [region_name: string]: Array<ICollisionRecord>;
           } = {};
 
           log.debug(
             `Processing ${collisions.length} collision records for all regions...`
           );
 
-          // Sort them based on request
-          collisions.forEach((collision: ICollision) => {
-            if (!(collision.region in Object.keys(collisionsByRegion))) {
-              collisionsByRegion[collision.region] = new Array<ICollision>();
+          // Break them up by region
+          collisions.forEach((collision: ICollisionRecord) => {
+            if (!Object.keys(collisionsByRegion).includes(collision.region)) {
+              log.trace(
+                `Adding region ${collision.region} to collisionsByRegion...`
+              );
+              collisionsByRegion[collision.region] = new Array<
+                ICollisionRecord
+              >();
             }
+
+            log.debug(`Found ${collision.region} collision ${collision.id}`);
 
             collisionsByRegion[collision.region].push(collision);
           });
 
+          log.info(`active_regions: ${DumpObject(active_regions)}`);
+
           Object.keys(collisionsByRegion).forEach(region_name => {
-            collision_promises[region_name] = processCollisionRecordsForRegion(
-              collisionsByRegion[region_name],
-              region_name
-            );
+            if (active_regions.includes(region_name)) {
+              collision_promises[
+                region_name
+              ] = processCollisionRecordsForRegion(
+                collisionsByRegion[region_name],
+                region_name
+              );
+            } else {
+              log.warn(
+                `Found collision for region ${region_name} which is not currently active.`
+              );
+            }
           });
 
           log.info(
@@ -1889,20 +2036,24 @@ async function processCollisionRecords(): Promise<Array<string>> {
                 idx = idx + 1;
               });
 
-              WriteReportItemRecords(
-                new AWS.DynamoDB.DocumentClient(),
-                report_items
-              )
-                .then(() => {
-                  log.info(
-                    `Wrote ${report_items.length} report item records for all regions.`
-                  );
-                })
-                .catch((e: Error) => {
-                  handleError(e);
-                });
+              if (report_items.length > 0) {
+                WriteReportItemRecords(
+                  new AWS.DynamoDB.DocumentClient(),
+                  report_items
+                )
+                  .then(() => {
+                    log.info(
+                      `Wrote ${report_items.length} report item records for all regions.`
+                    );
 
-              resolve();
+                    resolve();
+                  })
+                  .catch((e: Error) => {
+                    handleError(e);
+                  });
+              } else {
+                resolve();
+              }
             })
             .catch(err => {
               handleError(err);
@@ -1918,34 +2069,37 @@ async function processCollisionRecords(): Promise<Array<string>> {
 }
 
 function processCollisionRecordsForRegion(
-  collisions: Array<ICollision>,
+  collisions: Array<ICollisionRecord>,
   region_name: string
 ): Promise<Array<string>> {
   return new Promise<Array<string>>((resolve, reject) => {
-    regions[region_name].ProcessCollisions(collisions).then(tweets => {
-      UpdateCollisionRecords(collisions, 'PROCESSED')
-        .then(() => {
-          log.info(
-            `processCollisionRecordsForRegion: Resolving tweets: ${tweets}`
-          );
+    log.debug(
+      `Processing ${collisions.length} collisions for ${region_name}...`
+    );
 
-          resolve(tweets);
-        })
-        .catch((err: Error) => {
-          handleError(err);
-        });
+    regions[region_name].ProcessCollisions(collisions).then(tweets => {
+      log.debug(`Resolving ${tweets.length} tweets for ${region_name}...`);
+
+      resolve(tweets);
     });
   });
 }
 
-function batchWriteWithExponentialBackoff(
+// TODO: Move this out to a db utility file
+export function batchWriteWithExponentialBackoff(
   docClient: AWS.DynamoDB.DocumentClient,
   table: string,
   records: Array<object>
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    log.trace(
+      `Entering batchWriteWithExponentialBackoff with ${records.length} records for table ${table}...`
+    );
     var qdb = docClient ? Q(docClient) : Q();
     qdb.drain = function() {
+      log.debug(
+        `in drain batchWriteWithExponentialBackoff for table ${table}...`
+      );
       resolve();
     };
 
@@ -2578,6 +2732,7 @@ function UpdateReportItemRecords(
   });
 }
 
+// TODO: Not used. Do we need it?
 function UpdateCollisionRecords(
   collisions: Array<ICollisionRecord>,
   status: string
@@ -2586,8 +2741,12 @@ function UpdateCollisionRecords(
     var now = Date.now();
     let collision_records: Array<any> = [];
 
+    log.info(`Updating collision records to ${status}...`);
+
     collisions.forEach(collision => {
       if (status === 'PROCESSED') {
+        log.info(`Updating to PROCESSED...`);
+
         // Now that the record is PROCESSED, TTL is 30 days
         var ttl_expire: number =
           new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
@@ -2603,6 +2762,12 @@ function UpdateCollisionRecords(
         });
       }
     });
+
+    log.info(
+      `About to batch write ${
+        collision_records.length
+      } collision records: ${DumpObject(collision_records)}`
+    );
 
     if (collision_records.length > 0) {
       batchWriteWithExponentialBackoff(

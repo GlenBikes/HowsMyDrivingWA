@@ -19,7 +19,7 @@
     "debug-filter": {
       "type": "logLevelFilter",
       "appender": "debug",
-      "level": "trace",
+      "level": "debug",
       "maxLevel": "debug"
     },
     "result": {
@@ -35,7 +35,7 @@
     "result-filter": {
       "type": "logLevelFilter",
       "appender": "result",
-      "level": "trace",
+      "level": "debug",
       "maxLevel": "fatal"
     },
     "error": {
@@ -70,11 +70,11 @@
     }
   },
   "categories": {
-    "default": { "appenders": ["stdout", "default"], "level": "trace" },
-    "debug": { "appenders": ["debug", "debug-filter"], "level": "trace" },
+    "default": { "appenders": ["stdout", "default"], "level": "info" },
+    "debug": { "appenders": ["debug", "debug-filter"], "level": "debug" },
     "result": {
       "appenders": ["stdout", "result-filter", "error-filter"],
-      "level": "trace"
+      "level": "debug"
     },
     "error": { "appenders": ["error", "error-filter"], "level": "error" },
     "warn": { "appenders": ["warn", "warn-filter"], "level": "warn" }

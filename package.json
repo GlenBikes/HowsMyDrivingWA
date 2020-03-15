@@ -10,20 +10,21 @@
   "dependencies": {
     "aws-sdk": "^2.578.0",
     "chokidar": "^3.3.0",
-    "provinces": "^1.11.0",
     "dynamo-batchwrite-queue": "^1.0.1",
     "express": "^4.14.0",
     "find-port-free-sync": "^1.0.1",
-    "howsmydriving-dummy": "^0.1.78",
-    "howsmydriving-seattle": "^0.1.78",
+    "howsmydriving-dummy": "^0.1.89",
     "howsmydriving-nyc": "^0.1.42",
+    "howsmydriving-seattle": "^0.1.100",
     "howsmydriving-twitter": "^0.1.95",
-    "howsmydriving-utils": "^0.1.152",
+    "howsmydriving-utils": "^0.1.157",
     "log4js": "^4.0.2",
     "mutex": "^1.0.4",
+    "provinces": "^1.11.0",
     "redis-server": "^1.2.2",
     "request": "^2.88.0",
     "request-promise": "^4.2.5",
+    "sparkles": "^1.0.1",
     "uuid": "^3.3.3"
   },
   "devDependencies": {
@@ -73,4 +74,3 @@
   ],
   "license": "MIT"
 }
-

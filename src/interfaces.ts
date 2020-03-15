@@ -132,9 +132,11 @@ export class CitationRecord extends Citation {
 
 // TODO: Probalby shouldn't have this interface with all optional properties...
 export interface ICollisionRecord extends ICollision {
-  created?: number;
-  modified?: number;
-  ttl_expire?: number;
+  created: number;
+  modified: number;
+  ttl_expire: number;
+  region: string;
+  processing_status: string;
 }
 
 export class CollisionRecord extends Collision {
@@ -144,12 +146,13 @@ export class CollisionRecord extends Collision {
 
     var now = Date.now();
 
-    this.region_name = region_name;
+    this.region = region_name;
     this.created = now;
     this.modified = now;
     this.ttl_expire = new Date(now).setFullYear(
       new Date(now).getFullYear() + 2
     );
+    this.processing_status = 'UNPROCESSED';
   }
 
   region_name: string;

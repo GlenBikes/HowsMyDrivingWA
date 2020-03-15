@@ -1,9 +1,13 @@
 import * as AWS from 'aws-sdk';
 import { DocumentClient, QueryOutput } from 'aws-sdk/clients/dynamodb';
 
-import { IStateStore } from 'howsmydriving-utils';
+import { DumpObject, IStateStore } from 'howsmydriving-utils';
 
-import { handleError, tableNames } from '../server';
+import {
+  batchWriteWithExponentialBackoff,
+  handleError,
+  tableNames
+} from '../server';
 import { log } from '../logging';
 
 export class StateStore implements IStateStore {
@@ -41,7 +45,14 @@ export class StateStore implements IStateStore {
     });
   }
 
-  PutStateValue(keyname: string, keyvalue: string) {
+  PutStateValue(keyname: string, keyvalue: string): Promise<void> {
+    let values = {};
+
+    values[keyname] = keyvalue;
+
+    return this.PutStateValues(values);
+
+    /*
     var docClient: any = new AWS.DynamoDB.DocumentClient();
 
     var params = {
@@ -60,6 +71,57 @@ export class StateStore implements IStateStore {
 
         resolve();
       });
+    });
+    */
+  }
+
+  PutStateValues(values: { [key: string]: string }): Promise<void> {
+    var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+    //var params: Array<any> = [];
+
+    //Object.keys(values).forEach((key: string) => {});
+
+    return new Promise<void>((resolve, reject) => {
+      /*
+      Object.keys(values).forEach((key: string) => {
+        params.push({
+          TableName: tableNames['State'],
+          Item: {
+            keyname: `${this.region_name}_${key}`,
+            keyvalue: values[key]
+          }
+        });
+      });
+      */
+
+      let params = Object.keys(values).map(k => {
+        return {
+          PutRequest: {
+            Item: {
+              keyname: `${this.region_name}_${k}`,
+              keyvalue: values[k]
+            }
+          }
+        };
+      });
+
+      batchWriteWithExponentialBackoff(docClient, tableNames['State'], params)
+        .then(() => {
+          resolve();
+        })
+        .catch((err: Error) => {
+          handleError(err);
+        });
+      /*
+      docClient.put(params, async (err, result) => {
+        if (err) {
+          handleError(err);
+        }
+
+        resolve();
+      });
+      */
     });
   }
 }
