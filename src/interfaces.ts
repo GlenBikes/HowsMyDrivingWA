@@ -2,8 +2,12 @@ import {
   ICitation,
   ICollision,
   Citation,
-  Collision
+  Collision,
+  IMediaItem,
+  MediaItem
 } from 'howsmydriving-utils';
+
+import { bot_info } from './server';
 
 import { GetHowsMyDrivingId } from './util/stringutils';
 
@@ -75,7 +79,11 @@ export class ReportItemRecord implements IReportItemRecord {
       this.tweet_user_id_str = citation.tweet_user_id_str;
       this.tweet_user_screen_name = citation.tweet_user_screen_name;
     } else {
-      // Do we need the region if the region is in the tweet?
+      this.tweet_id = 0;
+      this.tweet_id_str = '0';
+      this.tweet_user_id = bot_info.id.toString();
+      this.tweet_user_id_str = bot_info.id_str;
+      this.tweet_user_screen_name = bot_info.screen_name;
     }
   }
 
@@ -140,7 +148,6 @@ export interface ICollisionRecord extends ICollision {
 }
 
 export class CollisionRecord extends Collision {
-  [name: string]: number | string | boolean;
   constructor(collision: ICollision, region_name: string) {
     super(collision);
 
@@ -156,6 +163,30 @@ export class CollisionRecord extends Collision {
   }
 
   region_name: string;
+  created: number;
+  modified: number;
+  ttl_expire: number;
+}
+
+export interface IMediaItemRecord extends IMediaItem {
+  id: string;
+  created: number;
+  modified: number;
+  ttl_expire: number;
+}
+
+export class MediaItemRecord extends MediaItem {
+  [name: string]: number | string | boolean;
+  constructor(media_item: IMediaItem) {
+    super(media_item);
+
+    var now = Date.now();
+
+    this.created = now;
+    this.modified = now;
+    this.ttl_expire = new Date().getTime() + 90 * 24 * 60 * 60 * 1000;
+  }
+
   created: number;
   modified: number;
   ttl_expire: number;

@@ -8,6 +8,7 @@ import {
   handleError,
   tableNames
 } from '../server';
+
 import { log } from '../logging';
 
 export class StateStore implements IStateStore {
@@ -35,7 +36,9 @@ export class StateStore implements IStateStore {
         }
 
         if (!result.Item || !result.Item['keyname']) {
-          log.warn(`StateStore: State value of '${keyname}' not found.`);
+          log.warn(
+            `StateStore: State value of '${this.region_name}_${keyname}' not found.`
+          );
         } else {
           ret = result.Item['keyvalue'].toString();
         }
@@ -43,6 +46,30 @@ export class StateStore implements IStateStore {
         resolve(ret);
       });
     });
+  }
+
+  async GetStateValueAsync(keyname: string): Promise<string> {
+    var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+    var params = {
+      TableName: tableNames['State'],
+      Key: {
+        keyname: `${this.region_name}_${keyname}`
+      }
+    };
+
+    var ret: string = '0';
+    let result = await docClient.get(params);
+
+    if (!result.Item || !result.Item['keyname']) {
+      log.warn(
+        `StateStore: State value of '${this.region_name}_${keyname}' not found.`
+      );
+    } else {
+      ret = result.Item['keyvalue'].toString();
+    }
+
+    return ret;
   }
 
   PutStateValue(keyname: string, keyvalue: string): Promise<void> {
