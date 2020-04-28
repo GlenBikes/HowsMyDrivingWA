@@ -4,11 +4,11 @@ dependencies:
   dynamo-batchwrite-queue: 1.0.1
   express: 4.17.1
   find-port-free-sync: 1.0.1
-  howsmydriving-dummy: 0.1.91
-  howsmydriving-nyc: 0.1.47
-  howsmydriving-seattle: 0.1.124
-  howsmydriving-twitter: 0.1.126
-  howsmydriving-utils: 0.1.189
+  howsmydriving-dummy: 0.1.92
+  howsmydriving-nyc: 0.1.48
+  howsmydriving-seattle: 0.1.126
+  howsmydriving-twitter: 0.1.127
+  howsmydriving-utils: 0.1.190
   log4js: 4.5.1
   mutex: 1.0.4
   provinces: 1.11.0
@@ -196,6 +196,7 @@ packages:
     resolution:
       integrity: sha512-I99sngh224D0M7XgW1s120zxCt3VYQ3IQsuw3P3jbq5GG4yc79+ZjyKznyOGIQrflfylLgcfekeZW/vk0yng6A==
   /@types/uuid/3.4.8:
+    dev: true
     resolution:
       integrity: sha512-zHWce3allXWSmRx6/AGXKCtSOA7JjeWd2L3t4aHfysNk8mouQnWCocveaT7a4IEIlPVHp81jzlnknqTgCjCLXA==
   /@types/uuid/3.4.9:
@@ -899,6 +900,22 @@ packages:
       fsevents: 2.1.3
     resolution:
       integrity: sha512-4QYCEWOcK3OJrxwvyyAOxFuhpvOVCYkr33LPfFNBjAD/w3sEzWsp2BUOkI4l9bHvWioAd0rc6NlHUOEaWkTeqg==
+  /chokidar/3.4.0:
+    dependencies:
+      anymatch: 3.1.1
+      braces: 3.0.2
+      glob-parent: 5.1.1
+      is-binary-path: 2.1.0
+      is-glob: 4.0.1
+      normalize-path: 3.0.0
+      readdirp: 3.4.0
+    dev: false
+    engines:
+      node: '>= 8.10.0'
+    optionalDependencies:
+      fsevents: 2.1.3
+    resolution:
+      integrity: sha512-aXAaho2VJtisB/1fg1+3nlLJqGOuewTzQpd/Tz0yTg2R0e4IGtshYvtjowyEumcBv2z+y4+kc75Mz7j5xJskcQ==
   /class-utils/0.3.6:
     dependencies:
       arr-union: 3.1.0
@@ -2219,7 +2236,7 @@ packages:
     dependencies:
       asynckit: 0.4.0
       combined-stream: 1.0.8
-      mime-types: 2.1.26
+      mime-types: 2.1.27
     dev: false
     engines:
       node: '>= 0.12'
@@ -2765,25 +2782,26 @@ packages:
     dev: true
     resolution:
       integrity: sha512-f/wzC2QaWBs7t9IYqB4T3sR1xviIViXJRJTWBlx2Gf3g0Xi5vI7Yy4koXQ1c9OYDGHN9sBy1DQ2AB8fqZBWhUg==
-  /howsmydriving-dummy/0.1.91:
+  /howsmydriving-dummy/0.1.92:
     dependencies:
       '@types/node': 12.12.37
-      chokidar: 3.3.1
-      howsmydriving-utils: 0.1.187
+      chokidar: 3.4.0
+      howsmydriving-utils: 0.1.190
       log4js: 4.5.1
+      moment: 2.24.0
       packpath: 0.1.0
       uuid: 3.4.0
     dev: false
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-k5IzPPpXevYIIqI1ljVaVBiAeVD3lw/GTxu3DDahxDwUoF6ebTYscpQ+yGZh619j1mndBFerTz9flZ3j1XGuvQ==
-  /howsmydriving-nyc/0.1.47:
+      integrity: sha512-/Cvcy23sKeRrxP7ulH61PrP3GesAFSet75zBfmyJKS7my7CxaVYtYKpI7lwaBUmyiwTZbXdVle9f2FTezxE01A==
+  /howsmydriving-nyc/0.1.48:
     dependencies:
       '@google/maps': 1.1.0
       '@types/node': 12.12.37
-      chokidar: 3.3.1
-      howsmydriving-utils: 0.1.189
+      chokidar: 3.4.0
+      howsmydriving-utils: 0.1.190
       log4js: 4.5.1
       packpath: 0.1.0
       request-promise: 4.2.5
@@ -2792,13 +2810,14 @@ packages:
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-NARjlnQKIqQR6f4DK+c8ghqU8+rhqRC8wu5Pqzw/SnsIADauj2MvNhnUpIer3BZIwCTveJChIEQ1vhHgzZX+0g==
-  /howsmydriving-seattle/0.1.124:
+      integrity: sha512-Eb/XhmLyL9W5EkUwKAhBgy1sUDDzhdvIXn8frV1bKrJBWlKia6MMo1Bxv97o5mhIw5l4hFsMFq9zBCbKsjwrnQ==
+  /howsmydriving-seattle/0.1.126:
     dependencies:
       '@types/node': 12.12.37
-      chokidar: 3.3.1
-      howsmydriving-utils: 0.1.187
+      chokidar: 3.4.0
+      howsmydriving-utils: 0.1.190
       log4js: 4.5.1
+      moment: 2.24.0
       packpath: 0.1.0
       soap: 0.30.0
       typed-rest-client: 1.7.3
@@ -2807,14 +2826,14 @@ packages:
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-woNUh0LTeBgrFg5EuvK++ybR06BlsYPJgjA9UfY/gam8ED7hzYFyQEPqKBLVY4nUPWyzjqWObJL8a4RynlLosg==
-  /howsmydriving-twitter/0.1.121:
+      integrity: sha512-M4bkFr9sK529NoImyjK/43BZphVRqS0WV7CXJblayoH1KTc0hDnFGaw2z1tXf18vMcFIwmb6wOyiQ4dE0skofQ==
+  /howsmydriving-twitter/0.1.127:
     dependencies:
       app-root-dir: 1.0.2
       app-root-path: 3.0.0
-      chokidar: 3.3.1
+      chokidar: 3.4.0
       file-system: 2.2.2
-      howsmydriving-utils: 0.1.178
+      howsmydriving-utils: 0.1.190
       log4js: 4.5.1
       mime: 2.4.4
       node-downloader-helper: 1.0.12
@@ -2827,70 +2846,14 @@ packages:
     engines:
       node: 10.x
     resolution:
-      integrity: sha512-PVkIIaQAvwj846rXt72eiJIYfSHLf6+pVpCNqFjLDm1LrD2b33iLSUW2Zh8qLG8klHAdq1XH57zPeIOifSqRjw==
-  /howsmydriving-twitter/0.1.122:
-    dependencies:
-      app-root-dir: 1.0.2
-      app-root-path: 3.0.0
-      chokidar: 3.3.1
-      file-system: 2.2.2
-      howsmydriving-utils: 0.1.178
-      log4js: 4.5.1
-      mime: 2.4.4
-      node-downloader-helper: 1.0.12
-      packpath: 0.1.0
-      soap: 0.30.0
-      temp: 0.9.1
-      twit: 2.2.11
-      uuid: 3.4.0
-    dev: false
-    engines:
-      node: 10.x
-    resolution:
-      integrity: sha512-YMtLAdRE76t+ZPxhll7zwYGiBSN2ytoq9fY2T9npyhTw1lSjzzcI/K1GAyrSnLxGWAt2DMPK9NqzDQKAi1GcCw==
-  /howsmydriving-twitter/0.1.126:
-    dependencies:
-      app-root-dir: 1.0.2
-      app-root-path: 3.0.0
-      chokidar: 3.3.1
-      file-system: 2.2.2
-      howsmydriving-utils: 0.1.189
-      log4js: 4.5.1
-      mime: 2.4.4
-      node-downloader-helper: 1.0.12
-      packpath: 0.1.0
-      soap: 0.30.0
-      temp: 0.9.1
-      twit: 2.2.11
-      uuid: 3.4.0
-    dev: false
-    engines:
-      node: 10.x
-    resolution:
-      integrity: sha512-gcTBEB+MIzUA4gfLjDGH3GDtwUZ9KI0s/AVEeOqvrNSuKD4J4rE/vG3fgP6HstLGh09KBCeE8h+9l4aGaRI7oA==
-  /howsmydriving-utils/0.1.178:
-    dependencies:
-      '@types/node': 12.12.37
-      '@types/uuid': 3.4.8
-      chokidar: 3.3.1
-      find-port-free-sync: 1.0.1
-      howsmydriving-twitter: 0.1.121
-      log4js: 6.2.1
-      merge2: 1.3.0
-      packpath: 0.1.0
-      time-delta: 0.0.2
-    dev: false
-    engines:
-      node: 11.15.0
-    resolution:
-      integrity: sha512-3KZOHhYiWz1oRkPke3HlTVpeVS/Q2xOx4yIrnbX2k43H4LAwYu/9iOKnh5xjFPpUW6EkSS/yDzIz3Aa1SIfBCg==
-  /howsmydriving-utils/0.1.187:
+      integrity: sha512-8uxh35fk7IWvqJtN8VbQKpH4UG1QFhQJZE8q0+Hjo4HvNc+RBzEoQH0wUTm4wMwrxemQn8xfd/IFJuUjrtVlFg==
+  /howsmydriving-utils/0.1.190:
     dependencies:
       '@types/node': 12.12.37
       '@types/uuid': 3.4.9
-      chokidar: 3.3.1
+      chokidar: 3.4.0
       find-port-free-sync: 1.0.1
-      howsmydriving-twitter: 0.1.122
+      howsmydriving-twitter: 0.1.127
       log4js: 6.2.1
       merge2: 1.3.0
       packpath: 0.1.0
@@ -2899,23 +2862,7 @@ packages:
     engines:
       node: 11.15.0
     resolution:
-      integrity: sha512-BrT8bdSEHZI9zKTu3/4yzPMZGB1kvf6YChlVDy/d/XAW8QZC+GHZjRQIDIA3HKq/FOSFcsFcnOYkm6MXoOEMyQ==
-  /howsmydriving-utils/0.1.189:
-    dependencies:
-      '@types/node': 12.12.37
-      '@types/uuid': 3.4.9
-      chokidar: 3.3.1
-      find-port-free-sync: 1.0.1
-      howsmydriving-twitter: 0.1.126
-      log4js: 6.2.1
-      merge2: 1.3.0
-      packpath: 0.1.0
-      time-delta: 0.0.2
-    dev: false
-    engines:
-      node: 11.15.0
-    resolution:
-      integrity: sha512-VoCzy7fjwpXSw6jqr2FM9hFWjOWuilbyhAGeQSHUyJh6i9gKHThAQpo5SM/89QN6bK23S28CYc5u/UfpSoFuBg==
+      integrity: sha512-p/d3MAV7AsMmTgOogkgcVY0VcrTfCPcDpwO2GitTeYplUJenflO++XdL/zY7xceFJ0Lzc68b9fLUWo7jGR0JlA==
   /http-errors/1.7.2:
     dependencies:
       depd: 1.1.2
@@ -3906,6 +3853,12 @@ packages:
       node: '>= 0.6'
     resolution:
       integrity: sha512-+5dsGEEovYbT8UY9yD7eE4XTc4UwJ1jBYlgaQQF38ENsKR3wj/8q8RFZrF9WIZpB2V1ArTVFUva8sAul1NzRzQ==
+  /mime-db/1.44.0:
+    dev: false
+    engines:
+      node: '>= 0.6'
+    resolution:
+      integrity: sha512-/NOTfLrsPBVeH7YtFPgsVWveuL+4SjjYxaQ1xtM1KMFj7HdxlBlxeyNLzhyJVx7r4rZGJAZ/6lkKCitSc/Nmpg==
   /mime-types/2.1.26:
     dependencies:
       mime-db: 1.43.0
@@ -3914,6 +3867,14 @@ packages:
       node: '>= 0.6'
     resolution:
       integrity: sha512-01paPWYgLrkqAyrlDorC1uDwl2p3qZT7yl806vW7DvDoxwXi46jsjFbg+WdwotBIk6/MbEhO/dh5aZ5sNj/dWQ==
+  /mime-types/2.1.27:
+    dependencies:
+      mime-db: 1.44.0
+    dev: false
+    engines:
+      node: '>= 0.6'
+    resolution:
+      integrity: sha512-JIhqnCasI9yD+SsmkquHBxTSEuZdQX5BuQnS2Vc7puQQQ+8yiP5AY5uWhpdv4YL4VM5c6iliiYWPgJ/nJQLp7w==
   /mime/1.6.0:
     dev: false
     engines:
@@ -4938,6 +4899,14 @@ packages:
       node: '>=8.10.0'
     resolution:
       integrity: sha512-zz0pAkSPOXXm1viEwygWIPSPkcBYjW1xU5j/JBh5t9bGCJwa6f9+BJa6VaB2g+b55yVrmXzqkyLf4xaWYM0IkQ==
+  /readdirp/3.4.0:
+    dependencies:
+      picomatch: 2.2.2
+    dev: false
+    engines:
+      node: '>=8.10.0'
+    resolution:
+      integrity: sha512-0xe001vZBnJEK+uKcj8qOhyAKPzIT+gStxWr3LCB0DwcXR5NZJ3IaC+yGnHCYzB/S7ov3m3EEbZI2zeNvX+hGQ==
   /rechoir/0.6.2:
     dependencies:
       resolve: 1.17.0
@@ -6570,11 +6539,11 @@ specifiers:
   gulp-mocha: ^7.0.2
   gulp-prettier: ^2.3.0
   gulp-typescript: ^6.0.0-alpha.1
-  howsmydriving-dummy: ^0.1.91
-  howsmydriving-nyc: ^0.1.47
-  howsmydriving-seattle: ^0.1.124
-  howsmydriving-twitter: ^0.1.126
-  howsmydriving-utils: ^0.1.189
+  howsmydriving-dummy: ^0.1.92
+  howsmydriving-nyc: ^0.1.48
+  howsmydriving-seattle: ^0.1.126
+  howsmydriving-twitter: ^0.1.127
+  howsmydriving-utils: ^0.1.190
   log4js: ^4.0.2
   mocha: ^7.1.1
   mocha-typescript: ^1.1.17
