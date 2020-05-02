@@ -22,10 +22,10 @@ import {
   GetTweetById,
   IGetTweetsResponse,
   SendTweets,
-  ITweet,
-  ITwitterUser,
   UploadMedia
 } from 'howsmydriving-twitter';
+
+import { ITweet, ITwitterUser } from 'howsmydriving-utils';
 
 // interfaces internal to project
 import {
@@ -328,7 +328,7 @@ app.all('/tweet', function(request: Request, response: Response) {
   processing_mutex.lock(
     MUTEX_KEY['tweet_processing'],
     mutex_lock_opts_send_tweets,
-    (err, lock) => {
+    async (err, lock) => {
       if (err) {
         handleError(err);
       }
@@ -340,7 +340,7 @@ app.all('/tweet', function(request: Request, response: Response) {
 
         /* First, let's load the ID of the last tweet we responded to. */
         getLastMentionId()
-          .then(last_mention_id => {
+          .then(async last_mention_id => {
             if (!last_mention_id) {
               handleError(new Error('ERROR: No last tweet found!'));
             }
@@ -356,41 +356,28 @@ app.all('/tweet', function(request: Request, response: Response) {
 
             // Now wait until processing of both tweets and dms is done.
             get_tweets_promise
-              .then(resp => {
+              .then(async resp => {
                 processTweets(resp.tweets, docClient)
-                  .then(requests_written => {
+                  .then(async requests_written => {
                     if (resp.tweets.length == 0) {
                       log.debug(`No new mentions found.`);
-
-                      log.trace(
-                        `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`
-                      );
-                      processing_mutex.unlock(lock);
-
-                      response.sendStatus(200);
                     } else {
-                      log.debug(`Finished processing tweets.`);
+                      log.debug(
+                        `Finished processing ${resp.tweets.length} tweets.`
+                      );
 
-                      setLastMentionId(resp.last_tweet_read_id)
-                        .then(() => {
-                          log.trace(
-                            `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on success...`
-                          );
-                          processing_mutex.unlock(lock);
-
-                          response.sendStatus(200);
-                        })
-                        .catch(err => {
-                          handleError(err);
-                        });
+                      await setLastMentionId(resp.last_tweet_read_id);
                     }
-                  })
-                  .catch(err => {
+
                     log.trace(
                       `Unlocking processing_mutex for ${MUTEX_KEY['tweet_processing']} on error...`
                     );
+
                     processing_mutex.unlock(lock);
 
+                    response.sendStatus(200);
+                  })
+                  .catch(err => {
                     handleError(err);
                   });
                 // TODO do the same for DM promise
@@ -588,15 +575,16 @@ app.all('/collisions', function(request: Request, response: Response) {
 
         checkForCollisions()
           .then(() => {
-            log.trace(
-              `Unlocking processing_mutex for ${MUTEX_KEY['safety_checking']}...`
-            );
-            processing_mutex.unlock(lock);
-
             response.sendStatus(200);
           })
           .catch((err: Error) => {
             handleError(err);
+          })
+          .finally(() => {
+            log.trace(
+              `Unlocking processing_mutex for ${MUTEX_KEY['safety_checking']}...`
+            );
+            processing_mutex.unlock(lock);
           });
       } catch (err) {
         log.trace(
@@ -1747,10 +1735,20 @@ function processReportItemRecordsNew(
 
           Promise.all(request_promises)
             .then(tweet_send_counts => {
+              log.debug(
+                `All ${
+                  request_promises.length
+                } request promises have all resolved returning: ${DumpObject(
+                  tweet_send_counts
+                )}`
+              );
+
               let total_tweets_sent: number = tweet_send_counts.reduce(
                 (a, b) => a + b,
                 0
               );
+
+              log.debug(`Total tweets sent: ${total_tweets_sent}.`);
 
               if (request_promises.length > 0) {
                 // Report how many tweets we sent for each region.
@@ -1951,10 +1949,14 @@ function checkForCollisions(): Promise<void> {
                   log.debug(
                     `Wrote ${collision_records_to_write.length} collision records, setting ${processed_count} to PROCESSED.`
                   );
+
+                  resolve();
                 })
                 .catch(err => {
                   handleError(err);
                 });
+            } else {
+              resolve();
             }
           })
           .catch((err: Error) => {
@@ -1964,8 +1966,6 @@ function checkForCollisions(): Promise<void> {
       .catch((err: Error) => {
         handleError(err);
       });
-
-    resolve();
   });
 }
 
@@ -2106,14 +2106,12 @@ function processCollisionRecordsForRegion(
       let tweet_promises: Array<Promise<string>> = [];
       let processed_tweets: Array<string> = [];
 
-      log.debug(`Resolving ${tweets.length} tweets for ${region_name}...`);
+      log.debug(
+        `Processing tweets looking for media for ${region_name} region.`
+      );
 
       // Check if the tweets include any media items that need to be uploaded
       tweets.forEach(tweet => {
-        log.debug(
-          `Processing tweets looking for media for ${region_name} region.`
-        );
-
         // Check if there are images included with this tweet
         let parts = tweet.split(__HOWSMYDRIVING_DELIMITER__);
 
@@ -2162,7 +2160,12 @@ function processCollisionRecordsForRegion(
         }
       });
 
+      log.debug(`Waiting for ${tweet_promises.length} tweet promises...`);
+
       Promise.all(tweet_promises).then(processed_tweets => {
+        log.debug(`All ${tweet_promises.length} tweet promises resolved.`);
+        log.debug(`Resolving ${tweets.length} tweets for ${region_name}...`);
+
         resolve(processed_tweets);
       });
     });
@@ -2536,7 +2539,7 @@ function setLastDmId(last_dm_id: string) {
   return putStateValue('last_dm_id', last_dm_id);
 }
 
-function setLastMentionId(last_mention_id: string): Promise<void> {
+async function setLastMentionId(last_mention_id: string): Promise<void> {
   lastdmLog.info(`Writing last mention id ${last_mention_id}.`);
   return putStateValue('last_mention_id', last_mention_id);
 }

@@ -166,6 +166,18 @@ export class CollisionRecord extends Collision {
   created: number;
   modified: number;
   ttl_expire: number;
+
+  getCollisionType(): string {
+    return 'unknown';
+  }
+
+  toString(): string {
+    return '';
+  }
+
+  shouldTweet(last_tweeted: number, collision_type: string): boolean {
+    return false;
+  }
 }
 
 export interface IMediaItemRecord extends IMediaItem {
