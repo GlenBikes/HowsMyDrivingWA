@@ -2691,8 +2691,6 @@ function GetReportItemRecords(
 ): Promise<Array<IReportItemRecord>> {
   const docClient = new AWS.DynamoDB.DocumentClient();
 
-  log.debug(`Getting report item records with status ${status}`);
-
   let report_item_records: Array<IReportItemRecord> = [];
 
   let name = `':${status}'`;

@@ -24,7 +24,6 @@
     "redis-server": "^1.2.2",
     "request": "^2.88.0",
     "request-promise": "^4.2.5",
-    "sparkles": "^1.0.1",
     "uuid": "^3.3.3"
   },
   "devDependencies": {
