@@ -285,7 +285,7 @@ process.env.REGIONS.split(',').forEach(region_package => {
     new Promise<any>((resolve, reject) => {
       import(region_package)
         .then(module => {
-          log.info(`Loaded ${region_package}. Module: ${DumpObject(module)}`);
+          log.trace(`Loaded ${region_package}. Creating region instance.`);
 
           module.Factory.createRegion(new StateStore(module.Factory.name))
             .then(region => {
@@ -1821,7 +1821,7 @@ function checkForCollisions(): Promise<void> {
     let collisions_returned: Array<ICollision> = [];
 
     // Query our store for unprocessed collisions
-    log.info(`Getting existing collision records...`);
+    log.debug(`Getting existing collision records...`);
 
     GetCollisionRecords()
       .then((existing_collision_records: Array<ICollisionRecord>) => {
@@ -1829,7 +1829,7 @@ function checkForCollisions(): Promise<void> {
           [key: string]: { [key: string]: ICollision };
         } = {};
 
-        log.info(
+        log.debug(
           `Retrieved ${existing_collision_records.length} existing collision records.`
         );
 
@@ -2797,15 +2797,9 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
     }
   };
 
-  log.info(
-    `About to query for existing collision records. params: ${DumpObject(
-      params
-    )}`
-  );
-
   return new Promise(function(resolve, reject) {
     try {
-      log.info(`Making query for unprocessed collisions...`);
+      log.trace(`Making query for unprocessed collisions...`);
 
       docClient.query(params, async (err: Error, result: QueryOutput) => {
         if (err) {
@@ -2816,7 +2810,7 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
           handleError(err);
         }
 
-        log.info(`Retrieved ${result.Items.length} collision records.`);
+        log.trace(`Retrieved ${result.Items.length} collision records.`);
 
         // 3. Check if we retrieved all the records
         if (
@@ -2832,7 +2826,7 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
           >;
         }
 
-        log.info(`Resolving ${collision_records.length} collision records.`);
+        log.debug(`Resolving ${collision_records.length} collision records.`);
 
         resolve(collision_records);
       });
