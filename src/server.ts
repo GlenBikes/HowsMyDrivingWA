@@ -285,6 +285,8 @@ process.env.REGIONS.split(',').forEach(region_package => {
     new Promise<any>((resolve, reject) => {
       import(region_package)
         .then(module => {
+          log.trace(`Loaded ${region_package}. Creating region instance.`);
+
           module.Factory.createRegion(new StateStore(module.Factory.name))
             .then(region => {
               log.debug(
@@ -1819,11 +1821,17 @@ function checkForCollisions(): Promise<void> {
     let collisions_returned: Array<ICollision> = [];
 
     // Query our store for unprocessed collisions
+    log.debug(`Getting existing collision records...`);
+
     GetCollisionRecords()
       .then((existing_collision_records: Array<ICollisionRecord>) => {
         let existing_collision_records_by_region_id: {
           [key: string]: { [key: string]: ICollision };
         } = {};
+
+        log.debug(
+          `Retrieved ${existing_collision_records.length} existing collision records.`
+        );
 
         existing_collision_records.forEach(collision => {
           if (!existing_collision_records_by_region_id[collision.region]) {
@@ -2773,8 +2781,6 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
   const docClient = new AWS.DynamoDB.DocumentClient();
   let collision_records: Array<ICollisionRecord> = [];
 
-  log.trace(`Getting collision records...`);
-
   // Query unprocessed collisions
   let params = {
     TableName: tableNames['Collisions'],
@@ -2795,6 +2801,10 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
 
       docClient.query(params, async (err: Error, result: QueryOutput) => {
         if (err) {
+          log.error(
+            `Failed to query collision records. Err: ${DumpObject(err)}`
+          );
+
           handleError(err);
         }
 
@@ -2814,11 +2824,17 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
           >;
         }
 
-        log.trace(`Resolving ${collision_records.length} collision records.`);
+        log.debug(`Resolving ${collision_records.length} collision records.`);
 
         resolve(collision_records);
       });
     } catch (err) {
+      log.error(
+        `Caught exception trying to query collision records. Err: ${DumpObject(
+          err
+        )}`
+      );
+
       reject(err);
     }
   });
