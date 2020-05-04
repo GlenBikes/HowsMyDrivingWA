@@ -2781,8 +2781,6 @@ function GetCollisionRecords(): Promise<Array<ICollisionRecord>> {
   const docClient = new AWS.DynamoDB.DocumentClient();
   let collision_records: Array<ICollisionRecord> = [];
 
-  log.info(`Getting collision records...`);
-
   // Query unprocessed collisions
   let params = {
     TableName: tableNames['Collisions'],
