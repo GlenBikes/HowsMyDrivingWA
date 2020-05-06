@@ -82,14 +82,6 @@ export class StateStore implements IStateStore {
     return this.PutStateValues(values);
   }
 
-  async PutStateValueAsync(keyname: string, keyvalue: string): Promise<void> {
-    let values = {};
-
-    values[keyname] = keyvalue;
-
-    return await this.PutStateValuesAsync(values);
-  }
-
   PutStateValues(values: { [key: string]: string }): Promise<void> {
     var docClient: any = new AWS.DynamoDB.DocumentClient();
 
