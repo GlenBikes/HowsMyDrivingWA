@@ -11,8 +11,6 @@ import {
 
 import { log } from '../logging';
 
-AWS.config.update({ region: 'us-east-2' });
-
 export class StateStore implements IStateStore {
   constructor(region_name: string) {
     this.region_name = region_name;
@@ -32,7 +30,7 @@ export class StateStore implements IStateStore {
 
     return new Promise<string>((resolve, reject) => {
       var ret: string = '0';
-      docClient.get(params, (err, result) => {
+      docClient.get(params, async (err, result) => {
         if (err) {
           handleError(err);
         }
@@ -51,17 +49,17 @@ export class StateStore implements IStateStore {
   }
 
   async GetStateValueAsync(keyname: string): Promise<string> {
-    const docClient: any = new AWS.DynamoDB.DocumentClient();
+    var docClient: any = new AWS.DynamoDB.DocumentClient();
 
-    let params = {
+    var params = {
       TableName: tableNames['State'],
       Key: {
         keyname: `${this.region_name}_${keyname}`
       }
     };
 
-    let ret: string = '0';
-    let result = await docClient.get(params).promise();
+    var ret: string = '0';
+    let result = await docClient.get(params);
 
     if (!result.Item || !result.Item['keyname']) {
       log.warn(
@@ -80,12 +78,50 @@ export class StateStore implements IStateStore {
     values[keyname] = keyvalue;
 
     return this.PutStateValues(values);
+
+    /*
+    var docClient: any = new AWS.DynamoDB.DocumentClient();
+
+    var params = {
+      TableName: tableNames['State'],
+      Item: {
+        keyname: `${this.region_name}_${keyname}`,
+        keyvalue: keyvalue
+      }
+    };
+
+    return new Promise<void>((resolve, reject) => {
+      docClient.put(params, async (err, result) => {
+        if (err) {
+          handleError(err);
+        }
+
+        resolve();
+      });
+    });
+    */
   }
 
   PutStateValues(values: { [key: string]: string }): Promise<void> {
     var docClient: any = new AWS.DynamoDB.DocumentClient();
 
+    //var params: Array<any> = [];
+
+    //Object.keys(values).forEach((key: string) => {});
+
     return new Promise<void>((resolve, reject) => {
+      /*
+      Object.keys(values).forEach((key: string) => {
+        params.push({
+          TableName: tableNames['State'],
+          Item: {
+            keyname: `${this.region_name}_${key}`,
+            keyvalue: values[key]
+          }
+        });
+      });
+      */
+
       let params = Object.keys(values).map(k => {
         return {
           PutRequest: {
@@ -104,6 +140,15 @@ export class StateStore implements IStateStore {
         .catch((err: Error) => {
           handleError(err);
         });
+      /*
+      docClient.put(params, async (err, result) => {
+        if (err) {
+          handleError(err);
+        }
+
+        resolve();
+      });
+      */
     });
   }
 }
