@@ -367,7 +367,12 @@ app.all('/tweet', function(request: Request, response: Response) {
                       log.debug(
                         `Finished processing ${resp.tweets.length} tweets.`
                       );
+                    }
 
+                    // Note: Even if no tweets are returned, we may get an updated last_tweet_read_id
+                    //       if there are later tweets that are ignored. So updating improves performance
+                    //       of next call.
+                    if (resp.last_tweet_read_id > last_mention_id) {
                       await setLastMentionId(resp.last_tweet_read_id);
                     }
 
